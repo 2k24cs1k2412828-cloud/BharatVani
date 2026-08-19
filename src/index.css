@@ -1,0 +1,349 @@
+:root {
+  /* Editorial & Modern News Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Outfit', 'Inter', sans-serif;
+  --font-hindi: 'Noto Sans Devanagari', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --font-scale: 1;
+
+  /* Single Unified Professional Newspaper Theme */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #ffffff;
+  --bg-subtle: #f1f5f9;
+  --bg-subtle-hover: #e2e8f0;
+  --border-color: #e2e8f0;
+  --border-dark: #cbd5e1;
+  --border-focus: #0f172a;
+
+  /* Official High-Contrast Ink */
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-inverse: #ffffff;
+
+  /* Single Dominant Brand Navy */
+  --gov-navy: #0f172a;
+  --gov-navy-hover: #1e293b;
+  --gov-navy-light: #f1f5f9;
+  --gov-navy-border: #cbd5e1;
+
+  --primary: #0f172a;
+  --primary-hover: #1e293b;
+  --primary-light: #f1f5f9;
+  --primary-border: #cbd5e1;
+
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease-in-out;
+}
+
+/* Dark Editorial Theme (Optional Contrast Switch) */
+[data-theme="dark"] {
+  --bg-primary: #090d16;
+  --bg-secondary: #0f172a;
+  --bg-card: #131d31;
+  --bg-card-hover: #17233b;
+  --bg-subtle: #1e293b;
+  --bg-subtle-hover: #29384f;
+  --border-color: #24344d;
+  --border-dark: #334b6e;
+  --border-focus: #38bdf8;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-inverse: #090d16;
+
+  --gov-navy: #38bdf8;
+  --gov-navy-hover: #7dd3fc;
+  --gov-navy-light: rgba(56, 189, 248, 0.12);
+  --gov-navy-border: rgba(56, 189, 248, 0.3);
+
+  --primary: #38bdf8;
+  --primary-hover: #7dd3fc;
+  --primary-light: rgba(56, 189, 248, 0.15);
+  --primary-border: rgba(56, 189, 248, 0.35);
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+}
+
+/* Base Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: calc(16px * var(--font-scale));
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+[lang="hi"] body, [lang="hi"] {
+  font-family: var(--font-hindi);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  color: var(--text-primary);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+[lang="hi"] h1, [lang="hi"] h2, [lang="hi"] h3, [lang="hi"] h4, [lang="hi"] h5, [lang="hi"] h6 {
+  font-family: var(--font-hindi);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Container */
+.container {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+/* Top Tricolor Accent Line */
+.tricolor-ribbon {
+  height: 3px;
+  width: 100%;
+  display: flex;
+}
+.tricolor-saffron { flex: 1; background-color: #ff9933; }
+.tricolor-white { flex: 1; background-color: #ffffff; }
+.tricolor-green { flex: 1; background-color: #138808; }
+
+/* Sticky Masthead Navigation */
+.header-masthead {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Live Status Dot */
+.live-pulse {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #dc2626;
+}
+
+/* Category Badges (Uniform Editorial Tag) */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-dark);
+}
+
+/* Grid Layouts */
+.news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .news-grid {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+/* Editorial News Card */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  overflow: hidden;
+}
+
+.card:hover {
+  border-color: var(--border-dark);
+  box-shadow: var(--shadow-md);
+}
+
+/* ========================================================
+   UNIFIED PROFESSIONAL BUTTON SYSTEM (0% AI GENERATED)
+   ======================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.84rem;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+/* Primary Action Button (Solid Deep Slate / Navy) */
+.btn-primary {
+  background: var(--gov-navy);
+  color: #ffffff;
+  border: 1px solid var(--gov-navy);
+}
+
+.btn-primary:hover {
+  background: var(--gov-navy-hover);
+  border-color: var(--gov-navy-hover);
+}
+
+/* Secondary Action Button (Clean Crisp White/Grey Border) */
+.btn-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-dark);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+/* Active / Playing Audio State */
+.btn-playing {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+  font-weight: 700;
+}
+
+/* Clean Editorial Highlight Box */
+.editorial-callout {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--gov-navy);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.9rem;
+}
+
+/* Minimal Sticky Audio Bar */
+.audio-bar-sticky {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  width: 90%;
+  max-width: 760px;
+  background: #0f172a;
+  color: #ffffff;
+  border: 1px solid #334155;
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1.25rem;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* Editorial Drawer / Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(2px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.modal-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  width: 100%;
+  max-width: 860px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-dark);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
