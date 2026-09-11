@@ -6,6 +6,17 @@ import https from 'https';
 import { fetchPibFeed, fetchArticleDetail } from './scraper.js';
 import { generateGeminiStoryboard } from './geminiService.js';
 import { extractAndVerifyFacts } from './factEngine.js';
+import { isSupabaseConfigured } from './supabaseClient.js';
+import {
+  upsertArticles,
+  getArticles as getDbArticles,
+  saveArticleDetail,
+  getFactReport,
+  saveFactReport,
+  getStoryboard,
+  saveStoryboard,
+  getDatabaseStats,
+} from './dbService.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -13,24 +24,68 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// API Health Check
-app.get('/api/health', (req, res) => {
+const getSafeLang = (l) => (['hi', 'en', 'ta', 'te', 'gu'].includes(l) ? l : 'hi');
+
+// API Health Check with Database Status
+app.get('/api/health', async (req, res) => {
+  const dbStats = await getDatabaseStats();
   res.json({
     status: 'online',
     timestamp: new Date().toISOString(),
-    service: 'PIB Live News Engine',
+    service: 'BharatVani PIB Live & Archive News Engine',
+    database: dbStats,
+    languages: ['hi', 'en', 'ta', 'te', 'gu'],
   });
 });
 
-// API: Get PIB Feed with filters
+// API: Get PIB Feed with filters + Supabase persistence
 app.get('/api/news', async (req, res) => {
   try {
-    const lang = req.query.lang === 'en' ? 'en' : 'hi';
+    const lang = getSafeLang(req.query.lang);
     const category = req.query.category || 'all';
     const search = (req.query.search || '').trim().toLowerCase();
     const force = req.query.force === 'true';
+    const useArchive = req.query.archive === 'true';
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
 
+    // If historical archive mode requested and Supabase is configured
+    if (useArchive && isSupabaseConfigured()) {
+      const dbResult = await getDbArticles({
+        lang,
+        category,
+        search,
+        limit,
+        offset,
+        dateFrom: req.query.dateFrom,
+        dateTo: req.query.dateTo,
+      });
+
+      if (dbResult && dbResult.articles.length > 0) {
+        return res.json({
+          success: true,
+          count: dbResult.articles.length,
+          total: dbResult.total,
+          page,
+          limit,
+          lang,
+          category,
+          source: 'supabase_archive',
+          data: dbResult.articles,
+        });
+      }
+    }
+
+    // Default live scrape feed
     const articles = await fetchPibFeed(lang, force);
+
+    // Persist scraped articles to Supabase in the background
+    if (isSupabaseConfigured() && articles && articles.length > 0) {
+      upsertArticles(articles).catch((err) =>
+        console.warn('Background Supabase article sync error:', err.message)
+      );
+    }
 
     let filtered = articles;
 
@@ -41,10 +96,11 @@ app.get('/api/news', async (req, res) => {
 
     // Filter by search query
     if (search) {
-      filtered = filtered.filter((a) =>
-        (a.title && a.title.toLowerCase().includes(search)) ||
-        (a.description && a.description.toLowerCase().includes(search)) ||
-        (a.category && a.category.toLowerCase().includes(search))
+      filtered = filtered.filter(
+        (a) =>
+          (a.title && a.title.toLowerCase().includes(search)) ||
+          (a.description && a.description.toLowerCase().includes(search)) ||
+          (a.category && a.category.toLowerCase().includes(search))
       );
     }
 
@@ -54,6 +110,7 @@ app.get('/api/news', async (req, res) => {
       total: articles.length,
       lang: lang,
       category: category,
+      dbSynced: isSupabaseConfigured(),
       lastUpdated: new Date().toISOString(),
       data: filtered,
     });
@@ -67,11 +124,67 @@ app.get('/api/news', async (req, res) => {
   }
 });
 
+// API: Dedicated Historical Archive Endpoint
+app.get('/api/news/archive', async (req, res) => {
+  try {
+    const lang = getSafeLang(req.query.lang);
+    const category = req.query.category || 'all';
+    const search = (req.query.search || '').trim().toLowerCase();
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+
+    const dbResult = await getDbArticles({
+      lang,
+      category,
+      search,
+      limit,
+      offset,
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+    });
+
+    if (dbResult) {
+      return res.json({
+        success: true,
+        count: dbResult.articles.length,
+        total: dbResult.total,
+        page,
+        limit,
+        lang,
+        category,
+        data: dbResult.articles,
+      });
+    }
+
+    // Fallback if DB not configured: return current live feed
+    const articles = await fetchPibFeed(lang, false);
+    res.json({
+      success: true,
+      count: articles.length,
+      total: articles.length,
+      page: 1,
+      limit: articles.length,
+      lang,
+      category,
+      fallback: true,
+      data: articles,
+    });
+  } catch (error) {
+    console.error('Error in /api/news/archive:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to query news archive',
+      error: error.message,
+    });
+  }
+});
+
 // API: Get Full Article Detail
 app.get('/api/news/detail', async (req, res) => {
   try {
     const prid = req.query.prid || req.query.id;
-    const lang = req.query.lang === 'en' ? 'en' : 'hi';
+    const lang = getSafeLang(req.query.lang);
 
     if (!prid) {
       return res.status(400).json({
@@ -81,6 +194,13 @@ app.get('/api/news/detail', async (req, res) => {
     }
 
     const detail = await fetchArticleDetail(prid, lang);
+
+    // Save detailed paragraphs & takeaways to Supabase if configured
+    if (isSupabaseConfigured() && detail) {
+      saveArticleDetail(prid, lang, detail).catch((err) =>
+        console.warn('Background Supabase saveArticleDetail error:', err.message)
+      );
+    }
 
     res.json({
       success: true,
@@ -96,7 +216,7 @@ app.get('/api/news/detail', async (req, res) => {
   }
 });
 
-// API: Generate AI Visual Video Storyboard
+// API: Generate AI Visual Video Storyboard (with DB Cache)
 app.post('/api/ai/storyboard', async (req, res) => {
   try {
     const { article, apiKey, lang } = req.body;
@@ -108,12 +228,34 @@ app.post('/api/ai/storyboard', async (req, res) => {
       });
     }
 
+    const language = getSafeLang(lang || article.lang);
+    const articleId = article.id || article.prid;
+
+    // Check Supabase Cache first to save Gemini quotas & time
+    if (isSupabaseConfigured() && articleId) {
+      const cachedStoryboard = await getStoryboard(articleId, language);
+      if (cachedStoryboard) {
+        return res.json({
+          success: true,
+          cached: true,
+          data: cachedStoryboard,
+        });
+      }
+    }
+
     const keyToUse = process.env.GEMINI_API_KEY || apiKey;
-    const language = lang === 'en' ? 'en' : 'hi';
     const storyboard = await generateGeminiStoryboard(article, keyToUse, language);
+
+    // Persist to Supabase in background
+    if (isSupabaseConfigured() && articleId && storyboard) {
+      saveStoryboard(articleId, language, storyboard).catch((err) =>
+        console.warn('Supabase saveStoryboard cache error:', err.message)
+      );
+    }
 
     res.json({
       success: true,
+      cached: false,
       data: storyboard,
     });
   } catch (error) {
@@ -126,7 +268,7 @@ app.post('/api/ai/storyboard', async (req, res) => {
   }
 });
 
-// API: Fact Verification & Grounded Entity-Claim Extraction
+// API: Fact Verification & Grounded Entity-Claim Extraction (with DB Cache)
 app.post('/api/news/factcheck', async (req, res) => {
   try {
     const { article, rawText, lang } = req.body;
@@ -138,15 +280,37 @@ app.post('/api/news/factcheck', async (req, res) => {
       });
     }
 
-    const language = lang === 'en' ? 'en' : 'hi';
+    const language = getSafeLang(lang || article.lang);
+    const articleId = article.id || article.prid;
+
+    // Check Supabase Cache first
+    if (isSupabaseConfigured() && articleId) {
+      const cachedReport = await getFactReport(articleId, language);
+      if (cachedReport) {
+        return res.json({
+          success: true,
+          cached: true,
+          data: cachedReport,
+        });
+      }
+    }
+
     const factReport = await extractAndVerifyFacts({
       article,
       rawText,
       lang: language,
     });
 
+    // Save verified report to Supabase
+    if (isSupabaseConfigured() && articleId && factReport) {
+      saveFactReport(articleId, language, factReport).catch((err) =>
+        console.warn('Supabase saveFactReport error:', err.message)
+      );
+    }
+
     res.json({
       success: true,
+      cached: false,
       data: factReport,
     });
   } catch (error) {
@@ -166,7 +330,7 @@ const ttsCache = new Map();
 app.get('/api/tts', async (req, res) => {
   try {
     const text = (req.query.text || '').trim();
-    const lang = req.query.lang === 'en' ? 'en' : 'hi';
+    const lang = getSafeLang(req.query.lang);
 
     if (!text) {
       return res.status(400).send('Text is required');
@@ -192,15 +356,18 @@ app.get('/api/tts', async (req, res) => {
       return res.send(cachedBuffer);
     }
 
-    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
+    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encodeURIComponent(
+      cleanText
+    )}`;
 
     const response = await axios.get(ttsUrl, {
       responseType: 'arraybuffer',
       httpsAgent: new https.Agent({ family: 4 }),
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://translate.google.com/',
-        'Accept': '*/*',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Referer: 'https://translate.google.com/',
+        Accept: '*/*',
       },
       timeout: 10000,
     });

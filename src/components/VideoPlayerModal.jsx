@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { 
   X, 
@@ -11,11 +11,107 @@ import {
   VolumeX, 
   ShieldCheck, 
   CheckCircle2,
+  Sparkles,
+  Smartphone,
+  Tv,
+  Zap,
+  Flame,
   UserCheck
 } from 'lucide-react';
 import { translations } from '../translations';
 import { speakFemaleVoice, stopAllSpeech } from '../utils/voiceEngine';
 import NewsAnchor3D from './NewsAnchor3D';
+import { generateFallbackStoryboard } from '../data/fallbackNews';
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
+// Precise Single-Word Karaoke Subtitles (Clean, Non-Confusing & High-Contrast)
+function PreciseWordCaptions({ text, progress, lang, accentColor = '#2563eb' }) {
+  const words = useMemo(() => {
+    if (!text) return [];
+    return text.trim().split(/\s+/).filter(Boolean);
+  }, [text]);
+
+  const activeWordIdx = Math.min(
+    Math.floor(progress * words.length),
+    Math.max(0, words.length - 1)
+  );
+
+  return (
+    <div style={{
+      background: '#ffffff',
+      borderTop: '1px solid #e2e8f0',
+      padding: '0.85rem 1.1rem',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.35rem',
+      flexShrink: 0,
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.35rem',
+        fontSize: '0.68rem',
+        color: '#16a34a',
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+      }}>
+        <Volume2 size={13} />
+        <span>{lang === 'hi' ? '🔴 लाइव AI समाचार वाचन (हिंदी)' : '🔴 LIVE AI VOICE CAPTIONS'}</span>
+      </div>
+
+      <p style={{
+        fontSize: '1.05rem',
+        lineHeight: 1.6,
+        color: '#0f172a',
+        margin: 0,
+        fontFamily: lang === 'hi' ? 'var(--font-hindi)' : 'var(--font-sans)',
+        wordBreak: 'break-word',
+      }}>
+        {words.map((word, idx) => {
+          const isActive = idx === activeWordIdx;
+          const isPassed = idx < activeWordIdx;
+
+          if (isActive) {
+            return (
+              <span
+                key={idx}
+                style={{
+                  background: '#fef08a', // High-contrast soft lemon yellow highlight
+                  color: '#0f172a',
+                  fontWeight: '800',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                  display: 'inline-block',
+                  margin: '0 2px',
+                  transition: 'background 0.15s ease',
+                }}
+              >
+                {word}{' '}
+              </span>
+            );
+          }
+
+          return (
+            <span
+              key={idx}
+              style={{
+                color: isPassed ? '#0f172a' : '#64748b',
+                fontWeight: isPassed ? '600' : '400',
+                margin: '0 1px',
+                transition: 'color 0.15s ease',
+              }}
+            >
+              {word}{' '}
+            </span>
+          );
+        })}
+      </p>
+    </div>
+  );
+}
 
 export default function VideoPlayerModal({
   article,
@@ -24,7 +120,7 @@ export default function VideoPlayerModal({
 }) {
   if (!article) return null;
 
-  const t = translations[lang];
+  const t = translations[lang] || {};
   const [storyboard, setStoryboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
@@ -32,25 +128,40 @@ export default function VideoPlayerModal({
   const [isMuted, setIsMuted] = useState(false);
   const [voiceRate, setVoiceRate] = useState(1);
   const [autoAdvance, setAutoAdvance] = useState(true);
+  const [viewFormat, setViewFormat] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'reel' : 'split')); // 'split' (Studio) or 'reel' (Reel layout)
+  const [speechProgress, setSpeechProgress] = useState(0);
 
-  // Fetch or generate AI storyboard in requested language
+  const progressIntervalRef = useRef(null);
+
+  // Fetch or generate AI storyboard
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
 
-    axios.post('/api/ai/storyboard', {
+    axios.post(`${API_BASE}/api/ai/storyboard`, {
       article,
       lang: lang === 'en' ? 'en' : 'hi',
-    })
+    }, { timeout: 5000 })
       .then((res) => {
-        if (isMounted && res.data.success) {
+        if (isMounted && res.data.success && res.data.data) {
           setStoryboard(res.data.data);
+          setCurrentSceneIndex(0);
+          setIsPlaying(true);
+        } else if (isMounted) {
+          const fb = generateFallbackStoryboard(article, lang);
+          setStoryboard(fb);
           setCurrentSceneIndex(0);
           setIsPlaying(true);
         }
       })
       .catch((err) => {
-        console.error('Error loading AI storyboard:', err);
+        console.warn('Backend AI storyboard unavailable, using client storyboard generator:', err.message);
+        if (isMounted) {
+          const fb = generateFallbackStoryboard(article, lang);
+          setStoryboard(fb);
+          setCurrentSceneIndex(0);
+          setIsPlaying(true);
+        }
       })
       .finally(() => {
         if (isMounted) setLoading(false);
@@ -65,21 +176,40 @@ export default function VideoPlayerModal({
   const scenes = storyboard?.scenes || [];
   const activeScene = scenes[currentSceneIndex];
 
-  // Play authentic Female Voice in exact language (Hindi / English)
+  // Play audio speech synthesis with time-synchronized progress
   useEffect(() => {
     if (!activeScene || loading) return;
 
     stopAllSpeech();
+    setSpeechProgress(0);
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
 
     if (!isPlaying || isMuted) return;
 
     const textToSpeak = `${activeScene.headline}. ${activeScene.narration}`;
 
+    // Estimated duration for smooth progress interpolation
+    const wordCount = textToSpeak.split(/\s+/).length;
+    const estSeconds = Math.max((wordCount / (2.6 * voiceRate)), 3.5);
+    const startTime = Date.now();
+
+    progressIntervalRef.current = setInterval(() => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      const calcProgress = Math.min(elapsed / estSeconds, 0.95);
+      setSpeechProgress((prev) => Math.max(prev, calcProgress));
+    }, 80);
+
     speakFemaleVoice({
       text: textToSpeak,
       lang: lang === 'en' ? 'en' : 'hi',
       rate: voiceRate,
+      onProgress: (prog) => {
+        setSpeechProgress(prog);
+      },
       onEnd: () => {
+        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+        setSpeechProgress(1);
+
         if (autoAdvance) {
           if (currentSceneIndex < scenes.length - 1) {
             setTimeout(() => {
@@ -91,11 +221,13 @@ export default function VideoPlayerModal({
         }
       },
       onError: () => {
+        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
         setIsPlaying(false);
       },
     });
 
     return () => {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
       stopAllSpeech();
     };
   }, [currentSceneIndex, isPlaying, isMuted, voiceRate, loading, autoAdvance, lang, scenes.length]);
@@ -145,14 +277,15 @@ export default function VideoPlayerModal({
         backdropFilter: 'blur(6px)',
       }}
     >
+      {/* Main Clean White Container */}
       <div
         className="video-cinema-container"
         onClick={(e) => e.stopPropagation()}
         style={{
           position: 'relative',
           width: '100%',
-          maxWidth: '1160px',
-          maxHeight: '92vh',
+          maxWidth: viewFormat === 'reel' ? '540px' : '1180px',
+          maxHeight: '94vh',
           height: 'auto',
           background: '#ffffff',
           color: '#0f172a',
@@ -163,9 +296,10 @@ export default function VideoPlayerModal({
           boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
           overflow: 'hidden',
           fontFamily: 'var(--font-sans)',
+          transition: 'max-width 0.3s ease',
         }}
       >
-        {/* National Tricolor Ribbon */}
+        {/* National Tricolor Top Ribbon */}
         <div style={{
           height: '4px',
           width: '100%',
@@ -173,7 +307,7 @@ export default function VideoPlayerModal({
           flexShrink: 0,
         }} />
 
-        {/* Top Header (Clean White Theme Matching Website) */}
+        {/* Top Header Bar (Clean White Theme) */}
         <div style={{
           padding: '0.75rem 1.25rem',
           display: 'flex',
@@ -183,7 +317,7 @@ export default function VideoPlayerModal({
           borderBottom: '1px solid #e2e8f0',
           flexShrink: 0,
         }}>
-          {/* Identity & Ministry */}
+          {/* Identity & Ministry Badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
             <div style={{
               display: 'flex',
@@ -199,7 +333,7 @@ export default function VideoPlayerModal({
               letterSpacing: '0.04em',
             }}>
               <span className="live-pulse" style={{ backgroundColor: '#ffffff', width: '6px', height: '6px' }}></span>
-              <span>BHARATVANI 24x7</span>
+              <span>BHARATVANI LIVE</span>
             </div>
 
             <div style={{
@@ -211,26 +345,63 @@ export default function VideoPlayerModal({
               fontWeight: '700',
             }}>
               <ShieldCheck size={16} color="#16a34a" />
-              <span>{article.ministry || (lang === 'hi' ? 'भारत सरकार • आधिकारिक समाचार बुलेटिन' : 'Government of India • Official Bulletin')}</span>
+              <span style={{ maxWidth: '340px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {article.ministry || (lang === 'hi' ? 'भारत सरकार • आधिकारिक विज्ञप्ति' : 'Government of India • Official')}
+              </span>
             </div>
           </div>
 
-          {/* Anchor Status & Close Button */}
+          {/* Right Controls: Format Switcher & Close */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {/* View Mode Toggle: Cinema Studio vs Reel */}
             <div style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              color: '#0f172a',
-              padding: '0.25rem 0.65rem',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '0.75rem',
-              fontWeight: '700',
               display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
+              background: '#f1f5f9',
+              borderRadius: 'var(--radius-md)',
+              padding: '2px',
+              border: '1px solid #e2e8f0',
             }}>
-              <UserCheck size={14} color="#0f172a" />
-              <span>{lang === 'hi' ? '3D AI एंकर वाचन' : '3D AI Presenter'}</span>
+              <button
+                onClick={() => setViewFormat('split')}
+                title="Studio Broadcast View"
+                style={{
+                  background: viewFormat === 'split' ? '#0f172a' : 'transparent',
+                  color: viewFormat === 'split' ? '#ffffff' : '#64748b',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.25rem 0.55rem',
+                  fontSize: '0.74rem',
+                  fontWeight: '700',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  cursor: 'pointer',
+                }}
+              >
+                <Tv size={13} />
+                <span className="hide-mobile">{lang === 'hi' ? 'स्टूडियो' : 'Studio'}</span>
+              </button>
+
+              <button
+                onClick={() => setViewFormat('reel')}
+                title="Instagram Reel View"
+                style={{
+                  background: viewFormat === 'reel' ? '#b91c1c' : 'transparent',
+                  color: viewFormat === 'reel' ? '#ffffff' : '#64748b',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.25rem 0.55rem',
+                  fontSize: '0.74rem',
+                  fontWeight: '700',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  cursor: 'pointer',
+                }}
+              >
+                <Smartphone size={13} />
+                <span>{lang === 'hi' ? 'रील्स (Reel)' : 'Reel'}</span>
+              </button>
             </div>
 
             <button
@@ -245,7 +416,7 @@ export default function VideoPlayerModal({
               }}
             >
               <X size={14} />
-              <span>{t.close}</span>
+              <span>{t.close || 'Close'}</span>
             </button>
           </div>
         </div>
@@ -259,32 +430,50 @@ export default function VideoPlayerModal({
             background: '#ffffff',
             flexShrink: 0,
           }}>
-            {scenes.map((s, idx) => (
-              <div
-                key={idx}
-                onClick={() => {
-                  stopAllSpeech();
-                  setCurrentSceneIndex(idx);
-                  setIsPlaying(true);
-                }}
-                style={{
-                  flex: 1,
-                  height: '4px',
-                  borderRadius: '2px',
-                  background: idx <= currentSceneIndex ? '#0f172a' : '#e2e8f0',
-                  cursor: 'pointer',
-                  transition: 'background 0.3s ease',
-                }}
-              />
-            ))}
+            {scenes.map((s, idx) => {
+              const isCurrent = idx === currentSceneIndex;
+              const isDone = idx < currentSceneIndex;
+              let fillWidth = '0%';
+              if (isDone) fillWidth = '100%';
+              else if (isCurrent) fillWidth = `${speechProgress * 100}%`;
+
+              return (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    stopAllSpeech();
+                    setCurrentSceneIndex(idx);
+                    setIsPlaying(true);
+                  }}
+                  style={{
+                    flex: 1,
+                    height: '4px',
+                    borderRadius: '2px',
+                    background: '#e2e8f0',
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    position: 'relative',
+                  }}
+                >
+                  <div
+                    style={{
+                      height: '100%',
+                      width: fillWidth,
+                      background: '#0f172a',
+                      transition: isCurrent ? 'width 0.1s linear' : 'width 0.3s ease',
+                    }}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* Central Stage: Left 16:9 Explainer Video & Right 3D Anchor */}
+        {/* Central Stage: Left Explainer Video & Right 3D Anchor */}
         <div style={{
           flex: 1,
           display: 'grid',
-          gridTemplateColumns: 'minmax(340px, 1.4fr) minmax(260px, 0.95fr)',
+          gridTemplateColumns: viewFormat === 'reel' ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))',
           gap: '1rem',
           padding: '0.85rem 1.25rem',
           alignItems: 'stretch',
@@ -295,10 +484,10 @@ export default function VideoPlayerModal({
             <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '4rem 0' }}>
               <div className="live-pulse" style={{ width: '16px', height: '16px', backgroundColor: '#0f172a', marginBottom: '1rem' }} />
               <h2 style={{ fontSize: '1.3rem', fontWeight: '800', marginBottom: '0.4rem', color: '#0f172a' }}>
-                {t.generatingVideo}
+                {t.generatingVideo || 'Generating AI Video Storyboard...'}
               </h2>
               <p style={{ color: '#64748b', fontSize: '0.88rem' }}>
-                {lang === 'hi' ? '3D स्टूडियो एवं दृश्य व्याख्या तैयार की जा रही है...' : 'Synthesizing 3D studio and official video explainer...'}
+                {lang === 'hi' ? 'दृश्य एवं सटीक समाचार सामग्री तैयार की जा रही है...' : 'Synthesizing scene visuals and official bullet points...'}
               </p>
             </div>
           ) : activeScene ? (
@@ -373,51 +562,91 @@ export default function VideoPlayerModal({
                   )}
                 </div>
 
-                {/* 2. MIDDLE VIDEO / B-ROLL DISPLAY: 100% Clean & Unobscured */}
+                {/* 2. MIDDLE VIDEO / B-ROLL DISPLAY: Exact Context Image for This Scene */}
                 <div style={{
                   position: 'relative',
                   flex: 1,
-                  minHeight: '200px',
+                  minHeight: viewFormat === 'reel' ? '300px' : '220px',
                   background: '#0f172a',
                   overflow: 'hidden',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}>
-                  {activeScene.videoUrl ? (
-                    <video
-                      key={activeScene.sceneIndex}
-                      src={activeScene.videoUrl}
-                      poster={activeScene.visualImage}
-                      autoPlay
-                      loop
-                      muted
-                      playsInline
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                      }}
-                    />
-                  ) : (
-                    <div
-                      key={activeScene.sceneIndex}
-                      style={{
+                  <div
+                    key={activeScene.sceneIndex + activeScene.visualImage}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundImage: `url(${activeScene.visualImage})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      animation: 'kenburns 14s infinite alternate ease-in-out',
+                    }}
+                  />
+
+                  {/* Subtle contextual sticker badge on the image */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '0.75rem',
+                    left: '0.85rem',
+                    background: 'rgba(15, 23, 42, 0.85)',
+                    backdropFilter: 'blur(4px)',
+                    color: '#ffffff',
+                    padding: '0.2rem 0.6rem',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.72rem',
+                    fontWeight: '800',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  }}>
+                    <Sparkles size={12} color="#facc15" />
+                    <span>{activeScene.badge || (lang === 'hi' ? 'सटीक दृश्य' : 'VISUAL')}</span>
+                  </div>
+
+                  {/* PiP Anchor for Reel Format (Prominently visible on mobile with live lip-sync) */}
+                  {viewFormat === 'reel' && (
+                    <div style={{
+                      position: 'absolute',
+                      right: '0.75rem',
+                      bottom: '0.75rem',
+                      width: '105px',
+                      height: '105px',
+                      borderRadius: '50%',
+                      overflow: 'hidden',
+                      border: '3px solid #ffffff',
+                      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.45)',
+                      zIndex: 25,
+                      background: '#f8fafc',
+                    }}>
+                      <NewsAnchor3D isPlaying={isPlaying && !isMuted} lang={lang} isPiP={true} />
+                      <div style={{
                         position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        backgroundImage: `url(${activeScene.visualImage})`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                        animation: 'kenburns 14s infinite alternate ease-in-out',
-                      }}
-                    />
+                        bottom: '2px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: 'rgba(15, 23, 42, 0.9)',
+                        color: '#ffffff',
+                        fontSize: '0.6rem',
+                        fontWeight: '800',
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        whiteSpace: 'nowrap',
+                        letterSpacing: '0.04em',
+                        pointerEvents: 'none',
+                      }}>
+                        AI ANCHOR
+                      </div>
+                    </div>
                   )}
                 </div>
 
-                {/* 3. BOTTOM SECTION: Key Takeaways Ribbon */}
+                {/* 3. Key Takeaways Ribbon */}
                 <div style={{
                   padding: '0.55rem 0.85rem',
                   background: '#f8fafc',
@@ -454,67 +683,62 @@ export default function VideoPlayerModal({
                   ))}
                 </div>
 
-                {/* 4. LOWER-THIRD SUBTITLES */}
+                {/* 4. PRECISE SINGLE-WORD SUBTITLES */}
+                <PreciseWordCaptions
+                  text={activeScene.narration}
+                  progress={speechProgress}
+                  lang={lang}
+                  accentColor={activeScene.accentColor}
+                />
+              </div>
+
+              {/* RIGHT COLUMN: 3D AI News Presenter Lady (Matching Clean Light Studio) */}
+              {viewFormat === 'split' && (
                 <div style={{
+                  position: 'relative',
+                  width: '100%',
+                  height: '100%',
+                  minHeight: '380px',
                   background: '#ffffff',
-                  borderTop: '1px solid #e2e8f0',
-                  padding: '0.75rem 1rem',
+                  borderRadius: 'var(--radius-md)',
+                  overflow: 'hidden',
+                  border: '1px solid #e2e8f0',
+                  boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)',
                   display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.2rem',
-                  flexShrink: 0,
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}>
                   <div style={{
+                    position: 'absolute',
+                    top: '0.75rem',
+                    left: '0.85rem',
+                    zIndex: 10,
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    color: '#0f172a',
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.35rem',
-                    fontSize: '0.68rem',
-                    color: '#16a34a',
-                    fontWeight: '800',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
                   }}>
-                    <Volume2 size={12} />
-                    <span>{lang === 'hi' ? 'लाइव AI समाचार वाचन (हिंदी)' : 'LIVE AI VOICE SUBTITLES (ENGLISH)'}</span>
+                    <UserCheck size={14} color="#0f172a" />
+                    <span>{lang === 'hi' ? '3D AI एंकर वाचन' : '3D AI Presenter'}</span>
                   </div>
 
-                  <p style={{
-                    fontSize: '0.94rem',
-                    lineHeight: 1.5,
-                    color: '#0f172a',
-                    fontWeight: '600',
-                    margin: 0,
-                  }}>
-                    "{activeScene.narration}"
-                  </p>
+                  <NewsAnchor3D
+                    isPlaying={isPlaying && !isMuted}
+                    lang={lang}
+                  />
                 </div>
-              </div>
-
-              {/* RIGHT COLUMN: 3D AI News Presenter Lady (Matching Light Studio) */}
-              <div style={{
-                position: 'relative',
-                width: '100%',
-                height: '100%',
-                minHeight: '380px',
-                background: '#ffffff',
-                borderRadius: 'var(--radius-md)',
-                overflow: 'hidden',
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-                <NewsAnchor3D
-                  isPlaying={isPlaying && !isMuted}
-                  lang={lang}
-                />
-              </div>
+              )}
             </>
           ) : null}
         </div>
 
-        {/* Bottom Master Playback Toolbar (Clean White Theme Matching Website) */}
+        {/* Bottom Master Playback Toolbar (Clean White Theme) */}
         <div style={{
           padding: '0.75rem 1.25rem',
           background: '#ffffff',
@@ -556,7 +780,7 @@ export default function VideoPlayerModal({
               }}
               title="Voice Speed"
             >
-              <span>{voiceRate === 0.85 ? (lang === 'hi' ? '🌾 0.85x (सरल)' : '🌾 0.85x (Easy)') : `${voiceRate}x`}</span>
+              <span>{voiceRate === 0.85 ? (lang === 'hi' ? '🌾 0.85x (सरल)' : '🌾 0.85x') : `${voiceRate}x`}</span>
             </button>
 
             {/* Auto Play */}
@@ -572,7 +796,7 @@ export default function VideoPlayerModal({
                 fontWeight: '700',
               }}
             >
-              <span>{t.autoPlay}: {autoAdvance ? 'ON' : 'OFF'}</span>
+              <span>{t.autoPlay || 'Auto'}: {autoAdvance ? 'ON' : 'OFF'}</span>
             </button>
           </div>
 
@@ -589,7 +813,7 @@ export default function VideoPlayerModal({
               }}
             >
               <ChevronLeft size={15} />
-              <span>{t.prevScene}</span>
+              <span>{t.prevScene || 'Prev'}</span>
             </button>
 
             <button
@@ -618,7 +842,7 @@ export default function VideoPlayerModal({
                 opacity: currentSceneIndex === scenes.length - 1 ? 0.35 : 1,
               }}
             >
-              <span>{t.nextScene}</span>
+              <span>{t.nextScene || 'Next'}</span>
               <ChevronRight size={15} />
             </button>
           </div>
@@ -638,7 +862,7 @@ export default function VideoPlayerModal({
               }}
             >
               <RotateCcw size={13} />
-              <span>{t.replay}</span>
+              <span>{t.replay || 'Replay'}</span>
             </button>
           </div>
         </div>
@@ -668,3 +892,5 @@ export default function VideoPlayerModal({
     </div>
   );
 }
+
+

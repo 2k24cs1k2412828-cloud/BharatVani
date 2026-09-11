@@ -8,6 +8,9 @@ import {
   Check
 } from 'lucide-react';
 import { translations } from '../translations';
+import { generateFallbackFactReport } from '../data/fallbackNews';
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export default function FactSheetModal({
   article,
@@ -25,17 +28,22 @@ export default function FactSheetModal({
     let isMounted = true;
     setLoading(true);
 
-    axios.post('/api/news/factcheck', {
+    axios.post(`${API_BASE}/api/news/factcheck`, {
       article,
       lang,
-    })
+    }, { timeout: 4000 })
       .then((res) => {
         if (isMounted && res.data.success) {
           setFactData(res.data.data);
+        } else if (isMounted) {
+          setFactData(generateFallbackFactReport(article, lang));
         }
       })
       .catch((err) => {
-        console.error('Error fetching fact check:', err);
+        console.warn('Backend fact check unavailable, using deterministic fact generator:', err.message);
+        if (isMounted) {
+          setFactData(generateFallbackFactReport(article, lang));
+        }
       })
       .finally(() => {
         if (isMounted) setLoading(false);

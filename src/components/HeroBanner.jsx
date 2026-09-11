@@ -1,7 +1,7 @@
 import React from 'react';
 import { Volume2, ChevronRight, Building2, ShieldCheck, Film, Check } from 'lucide-react';
 import { translations } from '../translations';
-import { THEME_VISUALS } from '../../server/geminiService';
+import { THEME_VISUALS, resolveContextualVisuals } from '../../server/geminiService';
 
 export default function HeroBanner({
   article,
@@ -17,24 +17,14 @@ export default function HeroBanner({
 
   const t = translations[lang];
   const isThisAudioPlaying = isPlaying && currentAudioId === article.id;
-  const categoryVisuals = THEME_VISUALS[article.category] || THEME_VISUALS.governance;
-  const heroImage = categoryVisuals[0];
+  const visuals = resolveContextualVisuals ? resolveContextualVisuals(article) : (THEME_VISUALS[article.category] || THEME_VISUALS.governance);
+  const heroImage = visuals[0];
 
   return (
-    <section style={{
-      background: 'var(--bg-card)',
-      border: '1px solid var(--border-color)',
-      borderRadius: 'var(--radius-md)',
-      overflow: 'hidden',
-      boxShadow: 'var(--shadow-sm)',
-      marginTop: '1.25rem',
-      display: 'grid',
-      gridTemplateColumns: 'minmax(320px, 1.2fr) minmax(280px, 1fr)',
-      gap: 0,
-    }}>
+    <section className="hero-banner-container">
       {/* Left Editorial Content Column */}
       <div style={{
-        padding: '2rem 2.25rem',
+        padding: '1.75rem',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
@@ -150,14 +140,17 @@ export default function HeroBanner({
       </div>
 
       {/* Right Editorial Photography Banner */}
-      <div style={{
-        position: 'relative',
-        minHeight: '280px',
-        backgroundImage: `url(${heroImage})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        borderLeft: '1px solid var(--border-color)',
-      }}>
+      <div
+        className="hero-banner-image"
+        style={{
+          position: 'relative',
+          minHeight: '280px',
+          backgroundImage: `url(${heroImage})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          borderLeft: '1px solid var(--border-color)',
+        }}
+      >
         <div style={{
           position: 'absolute',
           bottom: '1rem',

@@ -10,7 +10,10 @@ import {
   CheckCircle,
   Sprout,
   Terminal,
-  Volume2
+  Volume2,
+  Radio,
+  X,
+  UserCheck
 } from 'lucide-react';
 
 import Navbar from './components/Navbar';
@@ -23,11 +26,36 @@ import VideoPlayerModal from './components/VideoPlayerModal';
 import FactSheetModal from './components/FactSheetModal';
 import AudioPlayerBar from './components/AudioPlayerBar';
 import Footer from './components/Footer';
+import SplashScreen from './components/SplashScreen';
+import LanguageSelectionModal from './components/LanguageSelectionModal';
+import AuthModal from './components/AuthModal';
+import ProfileModal from './components/ProfileModal';
+
 import { translations } from './translations';
 import { speakFemaleVoice, stopAllSpeech, pauseSpeech, resumeSpeech } from './utils/voiceEngine';
+import { subscribeToLiveNews, supabase, isSupabaseClientConfigured, fetchArticlesDirectlyFromSupabase } from './utils/supabaseClient';
+import { getFallbackNews } from './data/fallbackNews';
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export default function App() {
-  // Persisted state from localStorage
+  // Onboarding & Splash States
+  const [showSplash, setShowSplash] = useState(() => !localStorage.getItem('bharatvani_splash_seen'));
+  const [showLanguageOnboarding, setShowLanguageOnboarding] = useState(false);
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+
+  // Auth & Profile Modals
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('bharatvani_user') || 'null');
+    } catch {
+      return null;
+    }
+  });
+
+  // App Settings persisted in localStorage
   const [lang, setLang] = useState(() => localStorage.getItem('pib_lang') || 'hi');
   const [theme, setTheme] = useState(() => localStorage.getItem('pib_theme') || 'light');
   const [mode, setMode] = useState(() => localStorage.getItem('pib_mode') || 'kisan');
@@ -38,9 +66,14 @@ export default function App() {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Modals for news detail, video, fact-check
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [videoArticle, setVideoArticle] = useState(null);
   const [factArticle, setFactArticle] = useState(null);
+  
+  // Real-time notification toast from Supabase
+  const [realtimeNotification, setRealtimeNotification] = useState(null);
 
   // Bookmarks
   const [bookmarks, setBookmarks] = useState(() => {
@@ -59,7 +92,6 @@ export default function App() {
     rate: 1,
   });
 
-  const utteranceRef = useRef(null);
   const t = translations[lang];
 
   // Sync settings to localStorage and HTML DOM
@@ -86,27 +118,121 @@ export default function App() {
     localStorage.setItem('pib_bookmarks', JSON.stringify(bookmarks));
   }, [bookmarks]);
 
-  // Fetch News Feed from API
+  // Listen to Supabase Auth State Changes
+  useEffect(() => {
+    if (isSupabaseClientConfigured() && supabase) {
+      // Get initial session
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user) {
+          setCurrentUser(user);
+          localStorage.setItem('bharatvani_user', JSON.stringify(user));
+        }
+      });
+
+      // Subscribe to login/logout events
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (session?.user) {
+          setCurrentUser(session.user);
+          localStorage.setItem('bharatvani_user', JSON.stringify(session.user));
+        } else if (event === 'SIGNED_OUT') {
+          setCurrentUser(null);
+          localStorage.removeItem('bharatvani_user');
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+  }, []);
+
+  // Fetch News Feed from API or Supabase or Fallback
   const fetchNews = async (force = false) => {
     if (force) setIsRefreshing(true);
     else setLoading(true);
 
+    let loadedArticles = [];
+
+    // 1. Attempt to fetch from Backend API
     try {
-      const res = await axios.get(`/api/news?lang=${lang}&force=${force}`);
-      if (res.data.success && Array.isArray(res.data.data)) {
-        setArticles(res.data.data);
+      const res = await axios.get(`${API_BASE}/api/news?lang=${lang}&force=${force}`, {
+        timeout: 4000,
+      });
+      if (res.data && res.data.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        loadedArticles = res.data.data;
       }
     } catch (err) {
-      console.error('Failed to load news:', err);
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
+      console.warn('Backend API unavailable, checking Supabase / fallback:', err.message);
     }
+
+    // 2. If backend failed or empty, query Supabase directly
+    if (loadedArticles.length === 0) {
+      try {
+        const dbArticles = await fetchArticlesDirectlyFromSupabase(lang);
+        if (dbArticles && dbArticles.length > 0) {
+          loadedArticles = dbArticles;
+        }
+      } catch (err) {
+        console.warn('Direct Supabase fetch failed:', err.message);
+      }
+    }
+
+    // 3. Fallback to rich bundled PIB news if both are unavailable
+    if (loadedArticles.length === 0) {
+      loadedArticles = getFallbackNews(lang);
+    }
+
+    setArticles(loadedArticles);
+    setLoading(false);
+    setIsRefreshing(false);
   };
 
   useEffect(() => {
     fetchNews(false);
   }, [lang]);
+
+  // Real-time Supabase WebSocket Listener
+  useEffect(() => {
+    const unsubscribe = subscribeToLiveNews((newArticle) => {
+      // Prepend to state if not duplicate
+      setArticles((prev) => {
+        if (prev.some((a) => a.id === newArticle.id || a.prid === newArticle.prid)) {
+          return prev;
+        }
+        return [newArticle, ...prev];
+      });
+
+      // Show live broadcast notification banner
+      setRealtimeNotification({
+        title: newArticle.title,
+        article: newArticle,
+        time: new Date().toLocaleTimeString(),
+      });
+    }, lang);
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [lang]);
+
+  // Splash Screen Complete -> Trigger Language Onboarding if first time
+  const handleSplashComplete = () => {
+    localStorage.setItem('bharatvani_splash_seen', 'true');
+    setShowSplash(false);
+    if (!localStorage.getItem('bharatvani_onboarding_done')) {
+      setShowLanguageOnboarding(true);
+    }
+  };
+
+  // Language Onboarding Complete -> Prompt Auth or enter App
+  const handleLanguageOnboardingComplete = (selectedCode) => {
+    setLang(selectedCode);
+    setShowLanguageOnboarding(false);
+    localStorage.setItem('bharatvani_onboarding_done', 'true');
+    if (!currentUser) {
+      setShowAuthModal(true);
+    }
+  };
 
   // Bookmarking Toggle
   const toggleBookmark = (article) => {
@@ -132,13 +258,12 @@ export default function App() {
   };
 
   const playAudio = (article) => {
-    // If already playing this article, toggle pause/play
     if (audioState.isPlaying && audioState.currentArticle?.id === article.id) {
       if (audioState.isPaused) {
-        if (window.speechSynthesis) window.speechSynthesis.resume();
+        resumeSpeech();
         setAudioState((prev) => ({ ...prev, isPaused: false }));
       } else {
-        if (window.speechSynthesis) window.speechSynthesis.pause();
+        pauseSpeech();
         setAudioState((prev) => ({ ...prev, isPaused: true }));
       }
       return;
@@ -195,9 +320,7 @@ export default function App() {
     }
   };
 
-  // Launch Video Player
   const openVideoPlayer = (article) => {
-    // Stop background audio if playing
     stopAudio();
     setVideoArticle(article);
   };
@@ -234,7 +357,7 @@ export default function App() {
     return list;
   }, [articles, bookmarks, activeCategory, searchQuery]);
 
-  // Spotlight article (1st item)
+  // Spotlight article
   const spotlightArticle = useMemo(() => {
     if (articles.length > 0 && activeCategory === 'all' && !searchQuery) {
       return articles[0];
@@ -242,7 +365,6 @@ export default function App() {
     return null;
   }, [articles, activeCategory, searchQuery]);
 
-  // Remaining articles for grid
   const gridArticles = useMemo(() => {
     if (spotlightArticle && activeCategory === 'all' && !searchQuery) {
       return filteredArticles.slice(1);
@@ -252,7 +374,32 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Top Sticky Glass Navigation */}
+      {/* 1. Animated Splash Screen */}
+      {showSplash && (
+        <SplashScreen onComplete={handleSplashComplete} />
+      )}
+
+      {/* 2. Onboarding Language Selection Gateway */}
+      {showLanguageOnboarding && (
+        <LanguageSelectionModal
+          currentLang={lang}
+          onSelectLanguage={(l) => setLang(l)}
+          onComplete={handleLanguageOnboardingComplete}
+          isModal={true}
+        />
+      )}
+
+      {/* 3. Regular Language Switcher Modal */}
+      {showLanguageModal && (
+        <LanguageSelectionModal
+          currentLang={lang}
+          onSelectLanguage={(l) => setLang(l)}
+          onComplete={() => setShowLanguageModal(false)}
+          isModal={true}
+        />
+      )}
+
+      {/* 4. Top Sticky Navigation */}
       <Navbar
         lang={lang}
         setLang={setLang}
@@ -267,7 +414,76 @@ export default function App() {
         bookmarkCount={bookmarks.length}
         activeCategory={activeCategory}
         setActiveCategory={setActiveCategory}
+        user={currentUser}
+        onOpenAuth={() => setShowAuthModal(true)}
+        onOpenProfile={() => setShowProfileModal(true)}
+        onOpenLanguageModal={() => setShowLanguageModal(true)}
       />
+
+      {/* Real-time Live PIB Press Release Toast Banner */}
+      {realtimeNotification && (
+        <div style={{
+          background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
+          color: '#ffffff',
+          padding: '0.65rem 1.25rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          animation: 'slideDown 0.3s ease',
+          fontSize: '0.88rem',
+          zIndex: 90,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: 1, overflow: 'hidden' }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              background: '#ef4444',
+              color: '#fff',
+              fontSize: '0.72rem',
+              fontWeight: 800,
+              padding: '2px 8px',
+              borderRadius: '999px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              <Radio size={12} style={{ animation: 'pulse 1.5s infinite' }} /> LIVE
+            </span>
+            <span style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {lang === 'hi' ? 'ताज़ा विज्ञप्ति:' : 'New Release:'} {realtimeNotification.title}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+            <button
+              onClick={() => {
+                setSelectedArticle(realtimeNotification.article);
+                setRealtimeNotification(null);
+              }}
+              style={{
+                background: '#ffffff',
+                color: '#1e3c72',
+                border: 'none',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                padding: '4px 10px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              {lang === 'hi' ? 'अभी देखें' : 'View Now'}
+            </button>
+            <button
+              onClick={() => setRealtimeNotification(null)}
+              style={{ background: 'transparent', border: 'none', color: '#ffffff', cursor: 'pointer', display: 'flex' }}
+              title="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <main className="container" style={{ flex: 1, paddingBottom: '3rem' }}>
@@ -442,6 +658,26 @@ export default function App() {
           lang={lang}
         />
       )}
+
+      {/* Auth Modal (Sign Up / Sign In / Google OAuth) */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthSuccess={(user) => {
+          setCurrentUser(user);
+          setShowAuthModal(false);
+        }}
+      />
+
+      {/* User Profile Modal */}
+      <ProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        user={currentUser}
+        onUpdateProfile={(updatedUser) => setCurrentUser(updatedUser)}
+        onSignOut={() => setCurrentUser(null)}
+        bookmarkCount={bookmarks.length}
+      />
 
       {/* Footer */}
       <Footer lang={lang} mode={mode} />

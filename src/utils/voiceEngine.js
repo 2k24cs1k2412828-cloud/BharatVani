@@ -25,6 +25,7 @@ export function stopAllSpeech() {
     try {
       currentAudio.pause();
       currentAudio.src = '';
+      currentAudio.ontimeupdate = null;
       currentAudio.onended = null;
       currentAudio.onerror = null;
     } catch {}
@@ -63,6 +64,7 @@ export function speakFemaleVoice({
   text,
   lang = 'hi',
   rate = 1,
+  onProgress = () => {},
   onEnd = () => {},
   onError = () => {},
 }) {
@@ -71,8 +73,8 @@ export function speakFemaleVoice({
   const clean = sanitizeSpeechText(text);
   if (!clean) return;
 
-  const targetLang = lang === 'en' ? 'en' : 'hi';
-  const ttsUrl = `/api/tts?lang=${targetLang}&text=${encodeURIComponent(clean.slice(0, 200))}`;
+  const safeLang = ['hi', 'en', 'ta', 'te', 'gu'].includes(lang) ? lang : 'hi';
+  const ttsUrl = `/api/tts?lang=${safeLang}&text=${encodeURIComponent(clean.slice(0, 200))}`;
 
   try {
     const audio = new Audio(ttsUrl);
@@ -84,17 +86,68 @@ export function speakFemaleVoice({
 
     notifyAudioStarted(audio);
 
+    audio.onloadedmetadata = () => {
+      if (audio.duration && !isNaN(audio.duration)) {
+        onProgress(0, 0, audio.duration);
+      }
+    };
+
+    audio.ontimeupdate = () => {
+      if (audio.duration && !isNaN(audio.duration)) {
+        const progress = Math.min(audio.currentTime / audio.duration, 1);
+        onProgress(progress, audio.currentTime, audio.duration);
+      }
+    };
+
     audio.onended = () => {
+      onProgress(1, audio.duration || 1, audio.duration || 1);
       currentAudio = null;
       notifyAudioStarted(null);
       onEnd();
     };
 
     audio.onerror = (err) => {
-      console.error('Audio playback error:', err);
+      console.warn('Audio stream error, falling back to Web Speech synthesis:', err);
       currentAudio = null;
       notifyAudioStarted(null);
-      onError(err);
+
+      // Web Speech API fallback with precise boundary support
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        const utterance = new SpeechSynthesisUtterance(clean);
+        const localeMap = {
+          hi: 'hi-IN',
+          en: 'en-IN',
+          ta: 'ta-IN',
+          te: 'te-IN',
+          gu: 'gu-IN',
+        };
+        utterance.lang = localeMap[safeLang] || 'hi-IN';
+        utterance.rate = rate;
+
+        const words = clean.split(/\s+/);
+        let currentWordIndex = 0;
+
+        utterance.onboundary = (event) => {
+          if (event.name === 'word') {
+            currentWordIndex++;
+            const p = Math.min(currentWordIndex / Math.max(words.length, 1), 1);
+            onProgress(p, event.elapsedTime || 0, 0);
+          }
+        };
+
+        utterance.onend = () => {
+          onProgress(1, 0, 0);
+          onEnd();
+        };
+
+        utterance.onerror = (sErr) => {
+          onError(sErr);
+        };
+
+        window.speechSynthesis.speak(utterance);
+      } else {
+        onError(err);
+      }
     };
 
     audio.play().catch((err) => {
@@ -106,3 +159,4 @@ export function speakFemaleVoice({
     onError(err);
   }
 }
+
