@@ -1,0 +1,30 @@
+name: Scheduled PIB News Sync to Supabase
+
+on:
+  schedule:
+    # Run every 3 hours automatically
+    - cron: '0 */3 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://rpalsmczwimzvwyqqtcc.supabase.co' }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'sb_publishable_jhMRpsEBS3QOH--oFnRsRw_SNza2ED2' }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'sb_publishable_jhMRpsEBS3QOH--oFnRsRw_SNza2ED2' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Fetch and Sync PIB News
+        run: node scripts/syncNews.js
