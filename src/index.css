@@ -751,9 +751,162 @@ button {
   white-space: nowrap;
 }
 
+.gov-role-pill-btn:hover {
+  border-color: var(--gov-navy);
+  color: var(--text-primary);
+}
+
 .gov-role-pill-btn.active {
   border-color: var(--gov-navy);
   background: var(--gov-navy-light);
   color: var(--gov-navy);
   font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
+
+/* ==========================================================================
+   OFFICIAL GOVERNMENT LANDING GATEWAY (FIRST OPEN EXPERIENCE)
+   ========================================================================== */
+
+.gov-landing-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: radial-gradient(circle at 50% 20%, rgba(255, 153, 51, 0.09) 0%, rgba(255, 255, 255, 0) 60%),
+              radial-gradient(circle at 80% 80%, rgba(19, 136, 8, 0.08) 0%, rgba(255, 255, 255, 0) 50%),
+              rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  overflow-y: auto;
+}
+
+.gov-landing-card {
+  width: 100%;
+  max-width: 840px;
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 25px 60px -12px rgba(15, 23, 42, 0.25), 0 12px 24px -8px rgba(0, 0, 0, 0.08);
+  color: #0f172a;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: landingFadeIn 0.35s ease-out forwards;
+}
+
+@keyframes landingFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.gov-landing-header {
+  padding: 1.5rem 1.75rem 1.25rem 1.75rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  position: relative;
+}
+
+.gov-landing-body {
+  padding: 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-height: calc(90vh - 160px);
+  overflow-y: auto;
+}
+
+.gov-landing-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .gov-landing-feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gov-landing-feature-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 1rem 1.15rem;
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.gov-landing-feature-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.gov-landing-feature-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.gov-landing-footer {
+  padding: 1.25rem 1.75rem;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.gov-lang-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.gov-lang-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gov-lang-chip:hover {
+  border-color: #002b66;
+  color: #0f172a;
+}
+
+.gov-lang-chip.active {
+  background: #002b66;
+  border-color: #002b66;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 43, 102, 0.25);
+}
+

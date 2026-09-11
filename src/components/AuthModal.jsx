@@ -16,7 +16,9 @@ import {
   Briefcase,
   GraduationCap,
   Sprout,
-  Users
+  Users,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { supabase, isSupabaseClientConfigured } from '../utils/supabaseClient';
 import { INDIAN_STATES } from '../data/indianLocations';
@@ -34,6 +36,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialTab =
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Form Fields
   const [email, setEmail] = useState('');
@@ -504,12 +507,28 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialTab =
               <div className="gov-input-wrapper">
                 <Lock size={15} color="var(--text-muted)" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   placeholder="••••••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0 4px',
+                  }}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
               </div>
             </div>
 

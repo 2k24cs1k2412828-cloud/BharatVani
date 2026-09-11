@@ -8,7 +8,8 @@ import {
   ZoomIn, 
   Bookmark, 
   FileText, 
-  LogIn
+  LogIn,
+  Compass
 } from 'lucide-react';
 import { translations } from '../translations';
 
@@ -30,6 +31,7 @@ export default function Navbar({
   onOpenAuth,
   onOpenProfile,
   onOpenLanguageModal,
+  onOpenLanding,
 }) {
   const t = translations[lang];
 
@@ -326,6 +328,27 @@ export default function Navbar({
               <Bookmark size={13} fill={bookmarkCount > 0 ? "currentColor" : "none"} />
               <span>{bookmarkCount}</span>
             </button>
+
+            {/* Portal Tour / Landing Gateway Button */}
+            {onOpenLanding && (
+              <button
+                onClick={onOpenLanding}
+                className="btn btn-secondary"
+                title={lang === 'hi' ? 'पोर्टल परिचय एवं सुविधाएं' : 'Portal Overview & Gateway'}
+                style={{
+                  padding: '0.3rem 0.65rem',
+                  fontSize: '0.78rem',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  flexShrink: 0,
+                }}
+              >
+                <Compass size={13} color="#ff9933" />
+                <span>{lang === 'hi' ? 'परिचय' : 'Overview'}</span>
+              </button>
+            )}
 
             {/* Desktop User Profile Avatar / Sign In Button */}
             <div className="navbar-desktop-user">

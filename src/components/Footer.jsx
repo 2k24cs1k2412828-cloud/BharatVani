@@ -2,7 +2,7 @@ import React from 'react';
 import { ShieldCheck, Heart, ExternalLink, Sprout, Terminal } from 'lucide-react';
 import { translations } from '../translations';
 
-export default function Footer({ lang, mode }) {
+export default function Footer({ lang, mode, onOpenLanding }) {
   const t = translations[lang];
 
   return (
@@ -28,6 +28,28 @@ export default function Footer({ lang, mode }) {
             <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: '420px' }}>
               {t.footerDisclaimer}
             </p>
+            {onOpenLanding && (
+              <button
+                type="button"
+                onClick={onOpenLanding}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  marginTop: '0.5rem',
+                  color: 'var(--gov-navy)',
+                  fontSize: '0.82rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span>🇮🇳 {lang === 'hi' ? 'पोर्टल मुख्य परिचय देखें' : 'View Portal Landing Overview'}</span>
+              </button>
+            )}
           </div>
 
           {/* Dual Audience Statement */}

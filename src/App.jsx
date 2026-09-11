@@ -215,23 +215,10 @@ export default function App() {
     };
   }, [lang]);
 
-  // Splash Screen Complete -> Trigger Language Onboarding if first time
+  // Official Landing Gateway Complete -> Enter Main Portal
   const handleSplashComplete = () => {
     localStorage.setItem('bharatvani_splash_seen', 'true');
     setShowSplash(false);
-    if (!localStorage.getItem('bharatvani_onboarding_done')) {
-      setShowLanguageOnboarding(true);
-    }
-  };
-
-  // Language Onboarding Complete -> Prompt Auth or enter App
-  const handleLanguageOnboardingComplete = (selectedCode) => {
-    setLang(selectedCode);
-    setShowLanguageOnboarding(false);
-    localStorage.setItem('bharatvani_onboarding_done', 'true');
-    if (!currentUser) {
-      setShowAuthModal(true);
-    }
   };
 
   // Bookmarking Toggle
@@ -374,9 +361,19 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* 1. Animated Splash Screen */}
+      {/* 1. Official Government Landing Gateway (First Open & Overview Tour) */}
       {showSplash && (
-        <SplashScreen onComplete={handleSplashComplete} />
+        <SplashScreen
+          currentLang={lang}
+          onSelectLanguage={(l) => setLang(l)}
+          onComplete={handleSplashComplete}
+          onOpenAuth={() => {
+            setShowSplash(false);
+            localStorage.setItem('bharatvani_splash_seen', 'true');
+            setShowAuthModal(true);
+          }}
+          onClose={() => setShowSplash(false)}
+        />
       )}
 
       {/* 2. Onboarding Language Selection Gateway */}
@@ -418,6 +415,7 @@ export default function App() {
         onOpenAuth={() => setShowAuthModal(true)}
         onOpenProfile={() => setShowProfileModal(true)}
         onOpenLanguageModal={() => setShowLanguageModal(true)}
+        onOpenLanding={() => setShowSplash(true)}
       />
 
       {/* Real-time Live PIB Press Release Toast Banner */}
@@ -680,7 +678,7 @@ export default function App() {
       />
 
       {/* Footer */}
-      <Footer lang={lang} mode={mode} />
+      <Footer lang={lang} mode={mode} onOpenLanding={() => setShowSplash(true)} />
     </div>
   );
 }
