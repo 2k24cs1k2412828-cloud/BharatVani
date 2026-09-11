@@ -60,10 +60,20 @@ export function chunkTextIntoPhrases(text = '', maxLen = 140) {
   return chunks.length > 0 ? chunks : [text.slice(0, maxLen)];
 }
 
+let progressAnimId = null;
+
+function cancelProgressTracking() {
+  if (progressAnimId) {
+    cancelAnimationFrame(progressAnimId);
+    progressAnimId = null;
+  }
+}
+
 // Stop all speech playback
 export function stopAllSpeech() {
   isPlaybackActive = false;
   isPaused = false;
+  cancelProgressTracking();
 
   if (currentAudio) {
     try {
@@ -72,6 +82,7 @@ export function stopAllSpeech() {
       currentAudio.ontimeupdate = null;
       currentAudio.onended = null;
       currentAudio.onerror = null;
+      currentAudio.onplay = null;
     } catch {}
     currentAudio = null;
     notifyAudioChange(null);
@@ -87,6 +98,7 @@ export function stopAllSpeech() {
 // Pause audio
 export function pauseSpeech() {
   isPaused = true;
+  cancelProgressTracking();
   if (currentAudio && !currentAudio.paused) {
     currentAudio.pause();
   }
@@ -162,6 +174,7 @@ export async function speakFemaleVoice({
 
   const clean = sanitizeSpeechText(text);
   if (!clean) {
+    onProgress(1, 0, 0);
     onEnd();
     return;
   }
@@ -174,7 +187,11 @@ export async function speakFemaleVoice({
   let chunkIndex = 0;
   const totalChunks = chunks.length;
 
+  const chunkWords = chunks.map((c) => c.trim().split(/\s+/).filter(Boolean).length);
+  const totalWords = chunkWords.reduce((a, b) => a + b, 0) || 1;
+
   async function playNextChunk() {
+    cancelProgressTracking();
     if (!isPlaybackActive) return;
 
     if (chunkIndex >= totalChunks) {
@@ -187,6 +204,8 @@ export async function speakFemaleVoice({
     }
 
     const chunkText = chunks[chunkIndex];
+    const wordsBefore = chunkWords.slice(0, chunkIndex).reduce((a, b) => a + b, 0);
+    const currentChunkWords = chunkWords[chunkIndex] || 1;
 
     // Priority 1: Backend TTS Endpoint
     let audioUrl = `${API_BASE}/api/tts?lang=${lang}&text=${encodeURIComponent(chunkText)}`;
@@ -207,29 +226,48 @@ export async function speakFemaleVoice({
       currentAudio = audio;
       notifyAudioChange(audio);
 
+      const track = () => {
+        if (!isPlaybackActive || !audio || audio !== currentAudio) return;
+        if (audio.duration && !isNaN(audio.duration) && audio.duration > 0) {
+          const currentChunkFraction = Math.min(audio.currentTime / audio.duration, 0.99);
+          const overall = (wordsBefore + (currentChunkFraction * currentChunkWords)) / totalWords;
+          onProgress(Math.min(overall, 0.99), audio.currentTime, audio.duration);
+        }
+        if (!audio.paused && !audio.ended) {
+          progressAnimId = requestAnimationFrame(track);
+        }
+      };
+
+      audio.onplay = () => {
+        cancelProgressTracking();
+        progressAnimId = requestAnimationFrame(track);
+      };
+
       audio.ontimeupdate = () => {
         if (!isPlaybackActive) return;
-        if (audio.duration && !isNaN(audio.duration)) {
-          const currentChunkProgress = audio.currentTime / audio.duration;
-          const overall = Math.min((chunkIndex + currentChunkProgress) / totalChunks, 0.98);
-          onProgress(overall, audio.currentTime, audio.duration);
+        if (audio.duration && !isNaN(audio.duration) && audio.duration > 0) {
+          const currentChunkFraction = Math.min(audio.currentTime / audio.duration, 0.99);
+          const overall = (wordsBefore + (currentChunkFraction * currentChunkWords)) / totalWords;
+          onProgress(Math.min(overall, 0.99), audio.currentTime, audio.duration);
         }
       };
 
       audio.onended = () => {
+        cancelProgressTracking();
         if (!isPlaybackActive) return;
         chunkIndex++;
-        const currentOverall = chunkIndex / totalChunks;
-        onProgress(currentOverall, 0, 0);
+        const wordsDone = chunkWords.slice(0, chunkIndex).reduce((a, b) => a + b, 0);
+        const overall = wordsDone / totalWords;
+        onProgress(Math.min(overall, 0.99), 0, 0);
 
         setTimeout(() => {
           playNextChunk();
-        }, 80);
+        }, 50);
       };
 
       audio.onerror = async () => {
+        cancelProgressTracking();
         console.warn('[VoiceEngine] Backend TTS stream error, attempting cloud fallback...');
-        // Try cloud audio once before speech synthesis
         const cloudUrl = await getCloudAudioUrl(chunkText, lang);
         if (cloudUrl && isPlaybackActive) {
           audio.src = cloudUrl;
@@ -244,11 +282,13 @@ export async function speakFemaleVoice({
       const playPromise = audio.play();
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
+          cancelProgressTracking();
           console.warn('[VoiceEngine] Playback error or autoplay blocked:', err);
           fallbackToWebSpeech(clean, lang, rate, onProgress, onEnd, onError);
         });
       }
     } catch (err) {
+      cancelProgressTracking();
       console.error('[VoiceEngine] Audio creation error:', err);
       fallbackToWebSpeech(clean, lang, rate, onProgress, onEnd, onError);
     }
@@ -260,6 +300,7 @@ export async function speakFemaleVoice({
 // Fallback to Web Speech API with explicit female voice preference
 function fallbackToWebSpeech(text, lang, rate, onProgress, onEnd, onError) {
   if (typeof window === 'undefined' || !window.speechSynthesis) {
+    onProgress(1, 0, 0);
     onEnd();
     return;
   }
@@ -291,6 +332,17 @@ function fallbackToWebSpeech(text, lang, rate, onProgress, onEnd, onError) {
     utterance.pitch = 1.25;
     utterance.rate = Math.max(0.85, Math.min(1.15, rate * 0.95));
 
+    const totalWords = text.trim().split(/\s+/).filter(Boolean).length || 1;
+
+    utterance.onboundary = (e) => {
+      if (e.name === 'word' || e.charIndex !== undefined) {
+        const charIndex = e.charIndex || 0;
+        const spokenWords = text.slice(0, charIndex).trim().split(/\s+/).filter(Boolean).length;
+        const progress = Math.min(spokenWords / totalWords, 0.98);
+        onProgress(progress, 0, 0);
+      }
+    };
+
     utterance.onend = () => {
       onProgress(1, 0, 0);
       onEnd();
@@ -305,6 +357,7 @@ function fallbackToWebSpeech(text, lang, rate, onProgress, onEnd, onError) {
     window.speechSynthesis.speak(utterance);
   } catch (err) {
     console.error('[VoiceEngine] Fallback synthesis error:', err);
+    onProgress(1, 0, 0);
     onEnd();
   }
 }

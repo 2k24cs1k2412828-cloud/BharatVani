@@ -32,10 +32,11 @@ function PreciseWordCaptions({ text, progress, lang, accentColor = '#2563eb' }) 
     return text.trim().split(/\s+/).filter(Boolean);
   }, [text]);
 
-  const activeWordIdx = Math.min(
-    Math.floor(progress * words.length),
-    Math.max(0, words.length - 1)
-  );
+  const activeWordIdx = (progress > 0 && progress < 1)
+    ? Math.min(Math.floor(progress * words.length), Math.max(0, words.length - 1))
+    : -1;
+
+  const isCompleted = progress >= 1;
 
   return (
     <div style={{
@@ -71,7 +72,7 @@ function PreciseWordCaptions({ text, progress, lang, accentColor = '#2563eb' }) 
       }}>
         {words.map((word, idx) => {
           const isActive = idx === activeWordIdx;
-          const isPassed = idx < activeWordIdx;
+          const isPassed = isCompleted || (activeWordIdx >= 0 && idx < activeWordIdx);
 
           if (isActive) {
             return (
@@ -83,10 +84,11 @@ function PreciseWordCaptions({ text, progress, lang, accentColor = '#2563eb' }) 
                   fontWeight: '800',
                   padding: '2px 6px',
                   borderRadius: '4px',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
                   display: 'inline-block',
                   margin: '0 2px',
-                  transition: 'background 0.15s ease',
+                  transform: 'scale(1.06)',
+                  transition: 'transform 0.1s ease, background 0.15s ease',
                 }}
               >
                 {word}{' '}
@@ -130,8 +132,6 @@ export default function VideoPlayerModal({
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [viewFormat, setViewFormat] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'reel' : 'split')); // 'split' (Studio) or 'reel' (Reel layout)
   const [speechProgress, setSpeechProgress] = useState(0);
-
-  const progressIntervalRef = useRef(null);
 
   // Fetch or generate AI storyboard instantly
   useEffect(() => {
@@ -192,32 +192,20 @@ export default function VideoPlayerModal({
 
     stopAllSpeech();
     setSpeechProgress(0);
-    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
 
     if (!isPlaying || isMuted) return;
 
-    const textToSpeak = `${activeScene.headline}. ${activeScene.narration}`;
-
-    // Estimated duration for smooth progress interpolation
-    const wordCount = textToSpeak.split(/\s+/).length;
-    const estSeconds = Math.max((wordCount / (2.6 * voiceRate)), 3.5);
-    const startTime = Date.now();
-
-    progressIntervalRef.current = setInterval(() => {
-      const elapsed = (Date.now() - startTime) / 1000;
-      const calcProgress = Math.min(elapsed / estSeconds, 0.95);
-      setSpeechProgress((prev) => Math.max(prev, calcProgress));
-    }, 80);
+    // AI voice narration strictly matches the on-screen karaoke caption text 1:1
+    const textToSpeak = activeScene.narration;
 
     speakFemaleVoice({
       text: textToSpeak,
-      lang: lang === 'en' ? 'en' : 'hi',
+      lang: lang || 'hi',
       rate: voiceRate,
       onProgress: (prog) => {
         setSpeechProgress(prog);
       },
       onEnd: () => {
-        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
         setSpeechProgress(1);
 
         if (autoAdvance) {
@@ -231,13 +219,11 @@ export default function VideoPlayerModal({
         }
       },
       onError: () => {
-        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
         setIsPlaying(false);
       },
     });
 
     return () => {
-      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
       stopAllSpeech();
     };
   }, [currentSceneIndex, isPlaying, isMuted, voiceRate, loading, autoAdvance, lang, scenes.length]);
