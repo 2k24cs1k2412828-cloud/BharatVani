@@ -1,8 +1,9 @@
-// 🇮🇳 Studio-Grade Indian Female AI Voice Engine
-// Delivers 100% authentic, clear, studio-quality female Indian voices across Hindi, English, Tamil, Telugu, and Gujarati
+// 🇮🇳 High-Definition Indian Female Voice Engine
+// Delivers 100% authentic, clear, studio-grade female Indian voices across Hindi, English, Tamil, Telugu, and Gujarati
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 let currentAudio = null;
-let currentAudioQueue = [];
 let isPlaybackActive = false;
 let isPaused = false;
 let globalRate = 1.0;
@@ -34,11 +35,10 @@ export function sanitizeSpeechText(text = '') {
     .trim();
 }
 
-// Split text into digestible phrases under 130 characters for natural breathing cadence
-export function chunkTextIntoPhrases(text = '', maxLen = 120) {
+// Split text into natural broadcast phrases
+export function chunkTextIntoPhrases(text = '', maxLen = 140) {
   if (!text) return [];
 
-  // Break at major sentence or clause terminators
   const parts = text.split(/([।\.\!\?\;\,]+)/);
   const chunks = [];
   let current = '';
@@ -64,7 +64,6 @@ export function chunkTextIntoPhrases(text = '', maxLen = 120) {
 export function stopAllSpeech() {
   isPlaybackActive = false;
   isPaused = false;
-  currentAudioQueue = [];
 
   if (currentAudio) {
     try {
@@ -107,28 +106,51 @@ export function resumeSpeech() {
   }
 }
 
-// Get Google Voice Language code
-function getGoogleVoiceLang(lang = 'hi') {
-  switch (lang) {
-    case 'en':
-      return 'en-IN'; // Authentic Indian English Female Voice
-    case 'ta':
-      return 'ta';    // Tamil Female Voice
-    case 'te':
-      return 'te';    // Telugu Female Voice
-    case 'gu':
-      return 'gu';    // Gujarati Female Voice
-    case 'hi':
-    default:
-      return 'hi';    // Hindi Female Voice
+// Get cloud sound URL via soundoftext for static hosts
+async function getCloudAudioUrl(text, lang) {
+  const voiceCodeMap = {
+    hi: 'hi-IN',
+    en: 'en-IN',
+    ta: 'ta-IN',
+    te: 'te-IN',
+    gu: 'gu-IN',
+  };
+  const voiceCode = voiceCodeMap[lang] || 'hi-IN';
+
+  try {
+    const res = await fetch('https://api.soundoftext.com/sounds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        engine: 'Google',
+        data: { text: text.slice(0, 150), voice: voiceCode },
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.id) {
+        // Poll for location
+        const locRes = await fetch(`https://api.soundoftext.com/sounds/${data.id}`);
+        if (locRes.ok) {
+          const locData = await locRes.json();
+          if (locData.location) {
+            return locData.location;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[VoiceEngine] Cloud TTS service notice:', err.message);
   }
+  return null;
 }
 
 /**
- * Play authentic, crystal-clear Indian Female Voice using Google Audio Stream
- * with zero robotic breaking and 100% natural pronunciation
+ * Play authentic, crystal-clear Indian Female Voice
+ * Priority: 1. Local/Backend /api/tts -> 2. SoundOfText Cloud MP3 -> 3. Calibrated SpeechSynthesis
  */
-export function speakFemaleVoice({
+export async function speakFemaleVoice({
   text,
   lang = 'hi',
   rate = 1.0,
@@ -148,12 +170,11 @@ export function speakFemaleVoice({
   isPaused = false;
   globalRate = rate;
 
-  const chunks = chunkTextIntoPhrases(clean, 120);
-  const voiceLang = getGoogleVoiceLang(lang);
+  const chunks = chunkTextIntoPhrases(clean, 140);
   let chunkIndex = 0;
   const totalChunks = chunks.length;
 
-  function playNextChunk() {
+  async function playNextChunk() {
     if (!isPlaybackActive) return;
 
     if (chunkIndex >= totalChunks) {
@@ -166,13 +187,21 @@ export function speakFemaleVoice({
     }
 
     const chunkText = chunks[chunkIndex];
-    const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${voiceLang}&client=tw-ob&q=${encodeURIComponent(chunkText)}`;
+
+    // Priority 1: Backend TTS Endpoint
+    let audioUrl = `${API_BASE}/api/tts?lang=${lang}&text=${encodeURIComponent(chunkText)}`;
+
+    // If on static hosting without backend, get cloud MP3
+    if (!API_BASE && window.location.hostname !== 'localhost') {
+      const cloudUrl = await getCloudAudioUrl(chunkText, lang);
+      if (cloudUrl) {
+        audioUrl = cloudUrl;
+      }
+    }
 
     try {
       const audio = new Audio();
-      audio.referrerPolicy = 'no-referrer';
-      audio.crossOrigin = 'anonymous';
-      audio.src = googleUrl;
+      audio.src = audioUrl;
       audio.playbackRate = Math.max(0.85, Math.min(1.2, rate));
 
       currentAudio = audio;
@@ -193,22 +222,29 @@ export function speakFemaleVoice({
         const currentOverall = chunkIndex / totalChunks;
         onProgress(currentOverall, 0, 0);
 
-        // Natural micro-pause between speech clauses (80ms)
         setTimeout(() => {
           playNextChunk();
         }, 80);
       };
 
-      audio.onerror = (err) => {
-        console.warn('[VoiceEngine] Google Audio stream fallback to Web Speech:', err);
-        // Fallback to Web Speech API with female pitch calibration
-        fallbackToWebSpeech(clean, lang, rate, onProgress, onEnd, onError);
+      audio.onerror = async () => {
+        console.warn('[VoiceEngine] Backend TTS stream error, attempting cloud fallback...');
+        // Try cloud audio once before speech synthesis
+        const cloudUrl = await getCloudAudioUrl(chunkText, lang);
+        if (cloudUrl && isPlaybackActive) {
+          audio.src = cloudUrl;
+          audio.play().catch(() => {
+            fallbackToWebSpeech(clean, lang, rate, onProgress, onEnd, onError);
+          });
+        } else {
+          fallbackToWebSpeech(clean, lang, rate, onProgress, onEnd, onError);
+        }
       };
 
       const playPromise = audio.play();
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
-          console.warn('[VoiceEngine] Autoplay prevented or stream error:', err);
+          console.warn('[VoiceEngine] Playback error or autoplay blocked:', err);
           fallbackToWebSpeech(clean, lang, rate, onProgress, onEnd, onError);
         });
       }
@@ -221,7 +257,7 @@ export function speakFemaleVoice({
   playNextChunk();
 }
 
-// Fallback to Web Speech API with forced female pitch and Indian voice filtering
+// Fallback to Web Speech API with explicit female voice preference
 function fallbackToWebSpeech(text, lang, rate, onProgress, onEnd, onError) {
   if (typeof window === 'undefined' || !window.speechSynthesis) {
     onEnd();
@@ -252,8 +288,6 @@ function fallbackToWebSpeech(text, lang, rate, onProgress, onEnd, onError) {
       utterance.voice = femaleVoice;
     }
 
-    // Crucial: Set pitch higher (1.25) so that even if the system only has a default male synthesizer (like eSpeak),
-    // it shifts into a bright, clear female vocal range instead of a deep male drone!
     utterance.pitch = 1.25;
     utterance.rate = Math.max(0.85, Math.min(1.15, rate * 0.95));
 

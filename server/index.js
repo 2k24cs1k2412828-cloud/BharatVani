@@ -356,7 +356,8 @@ app.get('/api/tts', async (req, res) => {
       return res.send(cachedBuffer);
     }
 
-    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encodeURIComponent(
+    const googleLang = lang === 'en' ? 'en-IN' : lang;
+    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${googleLang}&client=tw-ob&q=${encodeURIComponent(
       cleanText
     )}`;
 
