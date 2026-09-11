@@ -576,34 +576,46 @@ export default function VideoPlayerModal({
                 <div style={{
                   position: 'relative',
                   flex: 1,
-                  minHeight: viewFormat === 'reel' ? '300px' : '220px',
+                  minHeight: viewFormat === 'reel' ? '320px' : '240px',
                   background: '#0f172a',
                   overflow: 'hidden',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}>
+                  {/* Dynamic Ken-Burns HD Motion Backdrop */}
                   <div
-                    key={activeScene.sceneIndex + activeScene.visualImage}
+                    key={`${currentSceneIndex}_${activeScene.visualImage || 'default'}`}
                     style={{
                       position: 'absolute',
                       top: 0,
                       left: 0,
                       right: 0,
                       bottom: 0,
-                      backgroundImage: `url(${activeScene.visualImage})`,
+                      backgroundImage: `url(${activeScene.visualImage || 'https://images.unsplash.com/photo-1532375810709-75b1da00537c?auto=format&fit=crop&w=1200&q=80'})`,
                       backgroundSize: 'cover',
                       backgroundPosition: 'center',
-                      animation: 'kenburns 14s infinite alternate ease-in-out',
+                      animation: isPlaying ? 'kenburns 16s infinite alternate ease-in-out' : 'none',
                     }}
                   />
 
-                  {/* Subtle contextual sticker badge on the image */}
+                  {/* High-Definition Broadcast Scanline & Vignette Gradient */}
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'linear-gradient(180deg, rgba(15,23,42,0.4) 0%, rgba(15,23,42,0) 40%, rgba(15,23,42,0.85) 100%)',
+                    pointerEvents: 'none',
+                  }} />
+
+                  {/* Top-Left: LIVE Broadcast Badge */}
                   <div style={{
                     position: 'absolute',
                     top: '0.75rem',
                     left: '0.85rem',
-                    background: 'rgba(15, 23, 42, 0.85)',
+                    background: 'rgba(185, 28, 28, 0.9)',
                     backdropFilter: 'blur(4px)',
                     color: '#ffffff',
                     padding: '0.2rem 0.6rem',
@@ -614,9 +626,66 @@ export default function VideoPlayerModal({
                     alignItems: 'center',
                     gap: '0.35rem',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                    letterSpacing: '0.04em',
                   }}>
-                    <Sparkles size={12} color="#facc15" />
+                    <span className="live-pulse" style={{ backgroundColor: '#ffffff', width: '6px', height: '6px' }}></span>
+                    <span>LIVE PIB BROADCAST</span>
+                  </div>
+
+                  {/* Top-Right: Category / Visual Tag */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '0.75rem',
+                    right: '0.85rem',
+                    background: 'rgba(15, 23, 42, 0.75)',
+                    backdropFilter: 'blur(4px)',
+                    color: '#f8fafc',
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.7rem',
+                    fontWeight: '700',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                  }}>
+                    <Sparkles size={11} color="#facc15" />
                     <span>{activeScene.badge || (lang === 'hi' ? 'सटीक दृश्य' : 'VISUAL')}</span>
+                  </div>
+
+                  {/* Bottom: TV News Lower-Third Ticker & Key Takeaway */}
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '0.75rem',
+                    left: '0.85rem',
+                    right: viewFormat === 'reel' ? '7.5rem' : '0.85rem',
+                    background: 'rgba(15, 23, 42, 0.92)',
+                    backdropFilter: 'blur(8px)',
+                    borderLeft: '4px solid #f59e0b',
+                    borderRadius: '4px',
+                    padding: '0.5rem 0.85rem',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                  }}>
+                    <div style={{
+                      fontSize: '0.72rem',
+                      fontWeight: '800',
+                      color: '#f59e0b',
+                      textTransform: 'uppercase',
+                      marginBottom: '0.15rem',
+                      letterSpacing: '0.05em',
+                    }}>
+                      {activeScene.title || (lang === 'hi' ? 'मुख्य बुलेटिन बिंदु' : 'CORE HIGHLIGHT')}
+                    </div>
+                    <div style={{
+                      fontSize: '0.84rem',
+                      fontWeight: '700',
+                      color: '#ffffff',
+                      lineHeight: 1.3,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {activeScene.keyTakeaway || activeScene.headline}
+                    </div>
                   </div>
 
                   {/* PiP Anchor for Reel Format (Prominently visible on mobile with live lip-sync) */}

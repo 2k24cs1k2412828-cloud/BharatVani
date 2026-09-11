@@ -520,13 +520,62 @@ export function getFallbackNews(lang = 'hi') {
   return FALLBACK_NEWS_BY_LANG[safeLang] || FALLBACK_NEWS_BY_LANG['hi'];
 }
 
+// Category-aware high-definition visuals for video & TV b-roll display
+export function getVisualImagesForArticle(article = {}) {
+  const cat = (article.category || 'governance').toLowerCase();
+  const text = `${article.title || ''} ${article.description || ''} ${article.ministry || ''}`.toLowerCase();
+
+  if (/कृषि|किसान|फसल|बीज|मखाना|soil|kisan|crop|farm|agri|fertilizer/i.test(text) || cat === 'agriculture') {
+    return [
+      'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1589923188900-85dae523342b?auto=format&fit=crop&w=1200&q=80',
+    ];
+  }
+  if (/space|isro|satellite|rocket|tech|digital|ai|उपग्रह|इसरो|तकनीक/i.test(text) || cat === 'technology') {
+    return [
+      'https://images.unsplash.com/photo-1517976487507-5b3b4a45097c?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80',
+    ];
+  }
+  if (/budget|finance|tax|stock|trade|export|cbam|वित्त|वाणिज्य|बजट|व्यापार/i.test(text) || cat === 'economy') {
+    return [
+      'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1200&q=80',
+    ];
+  }
+  if (/health|hospital|doctor|medicine|ayush|vaccine|रोग|दवा|अस्पताल|चिकित्सा/i.test(text) || cat === 'health') {
+    return [
+      'https://images.unsplash.com/photo-1538108149393-fbbd81895907?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1200&q=80',
+    ];
+  }
+  if (/solar|climate|green|forest|water|गंगा|पर्यावरण|सौर|ऊर्जा/i.test(text) || cat === 'environment') {
+    return [
+      'https://images.unsplash.com/photo-1509391365360-2e959784a276?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=1200&q=80',
+    ];
+  }
+  // Default: Governance / National & International Summit
+  return [
+    'https://images.unsplash.com/photo-1532375810709-75b1da00537c?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1587474260584-136574528ed5?auto=format&fit=crop&w=1200&q=80',
+  ];
+}
+
 // Generate client-side storyboard for AI 3D Video News Anchor if backend is offline
-export function generateFallbackStoryboard(article, lang = 'hi') {
+export function generateFallbackStoryboard(article = {}, lang = 'hi') {
   const isHindi = lang === 'hi';
   const title = article.title || '';
   const desc = article.description || '';
   const points = article.keyTakeaways || [desc || title];
   const ministry = article.ministry || (isHindi ? 'भारत सरकार' : 'Government of India');
+  const visuals = getVisualImagesForArticle(article);
 
   return {
     source: 'client_offline_engine',
@@ -543,7 +592,9 @@ export function generateFallbackStoryboard(article, lang = 'hi') {
         keyTakeaway: points[0] || desc,
         statCallout: isHindi ? 'ताज़ा विज्ञप्ति' : 'Official Release',
         recommendedCameraAngle: 'wide_presentation',
-        emotion: 'formal_news'
+        emotion: 'formal_news',
+        visualImage: visuals[0],
+        badge: isHindi ? 'प्रमुख दृश्य' : 'LEAD VISUAL',
       },
       {
         sceneNumber: 2,
@@ -553,7 +604,9 @@ export function generateFallbackStoryboard(article, lang = 'hi') {
         keyTakeaway: points[1] || points[0] || desc,
         statCallout: isHindi ? 'राष्ट्रीय पहल' : 'National Initiative',
         recommendedCameraAngle: 'medium_close_up',
-        emotion: 'optimistic'
+        emotion: 'optimistic',
+        visualImage: visuals[1],
+        badge: isHindi ? 'योजना प्रभाव' : 'IMPACT ANALYSIS',
       },
       {
         sceneNumber: 3,
@@ -565,7 +618,9 @@ export function generateFallbackStoryboard(article, lang = 'hi') {
         keyTakeaway: isHindi ? 'आधिकारिक स्रोत: प्रेस सूचना ब्यूरो (PIB)' : 'Source: Press Information Bureau (PIB)',
         statCallout: '100% Verified',
         recommendedCameraAngle: 'close_up_serious',
-        emotion: 'concluding'
+        emotion: 'concluding',
+        visualImage: visuals[2],
+        badge: isHindi ? 'आधिकारिक स्रोत' : 'VERIFIED SOURCE',
       }
     ]
   };
