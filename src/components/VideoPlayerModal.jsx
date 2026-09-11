@@ -219,7 +219,14 @@ export default function VideoPlayerModal({
         }
       },
       onError: () => {
-        setIsPlaying(false);
+        setSpeechProgress(1);
+        if (autoAdvance) {
+          if (currentSceneIndex < scenes.length - 1) {
+            setTimeout(() => {
+              setCurrentSceneIndex((prev) => prev + 1);
+            }, 1000);
+          }
+        }
       },
     });
 

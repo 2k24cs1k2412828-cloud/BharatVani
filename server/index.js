@@ -351,6 +351,8 @@ app.get('/api/tts', async (req, res) => {
       res.set({
         'Content-Type': 'audio/mpeg',
         'Content-Length': cachedBuffer.length,
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'public, max-age=86400',
       });
       return res.send(cachedBuffer);
@@ -385,6 +387,8 @@ app.get('/api/tts', async (req, res) => {
     res.set({
       'Content-Type': 'audio/mpeg',
       'Content-Length': buffer.length,
+      'Accept-Ranges': 'bytes',
+      'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'public, max-age=86400',
     });
 
