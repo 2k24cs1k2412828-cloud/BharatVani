@@ -15,11 +15,10 @@ import {
   Smartphone,
   Tv,
   Zap,
-  Flame,
   UserCheck
 } from 'lucide-react';
 import { translations } from '../translations';
-import { speakFemaleVoice, stopAllSpeech } from '../utils/voiceEngine';
+import { speakFemaleVoice, stopAllSpeech, prewarmAudio } from '../utils/voiceEngine';
 import NewsAnchor3D from './NewsAnchor3D';
 import { generateFallbackStoryboard } from '../data/fallbackNews';
 
@@ -185,6 +184,15 @@ export default function VideoPlayerModal({
 
   const scenes = storyboard?.scenes || [];
   const activeScene = scenes[currentSceneIndex];
+
+  // Pre-warm audio streams for all scenes in background so scenes play seamlessly
+  useEffect(() => {
+    if (scenes.length > 0) {
+      scenes.forEach((s) => {
+        if (s.narration) prewarmAudio(s.narration, lang || 'hi');
+      });
+    }
+  }, [scenes, lang]);
 
   // Play audio speech synthesis with time-synchronized progress
   useEffect(() => {

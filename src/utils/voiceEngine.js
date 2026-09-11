@@ -167,15 +167,89 @@ export function resumeSpeech() {
 }
 
 /**
- * Direct Google Indian Female Voice URL
- * Google Translate TTS engine supports:
- * - 'hi': Authentic Indian Female Voice (Hindi)
- * - 'en-IN': Authentic Indian Female Voice (English with natural Indian accent)
- * - 'ta': Authentic Indian Female Voice (Tamil)
- * - 'te': Authentic Indian Female Voice (Telugu)
- * - 'gu': Authentic Indian Female Voice (Gujarati)
+/**
+ * SoundOfText Cloud MP3 Cache & Resolver
+ * Public, CORS-friendly CDN stream for Google Neural Indian Voices
+ * Guaranteed playback on hosted environments (Vercel, GitHub Pages, Netlify)
  */
-export function getGoogleTtsUrl(text, lang = 'hi') {
+const soundOfTextCache = new Map();
+
+export async function resolveSoundOfTextUrl(text = '', lang = 'hi') {
+  const clean = sanitizeSpeechText(text).slice(0, 150);
+  if (!clean) return null;
+
+  const key = `${lang}:${clean}`;
+  if (soundOfTextCache.has(key)) {
+    return soundOfTextCache.get(key);
+  }
+
+  const voiceMap = {
+    hi: 'hi-IN',
+    en: 'en-IN',
+    ta: 'ta-IN',
+    te: 'te-IN',
+    gu: 'gu-IN',
+  };
+  const voice = voiceMap[lang] || 'hi-IN';
+
+  try {
+    const res = await fetch('https://api.soundoftext.com/sounds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        engine: 'Google',
+        data: { text: clean, voice },
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || !data.id) return null;
+
+    // Fast status poll
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await new Promise((r) => setTimeout(r, 200));
+      const sRes = await fetch(`https://api.soundoftext.com/sounds/${data.id}`);
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        if (sData.status === 'Done' && sData.location) {
+          soundOfTextCache.set(key, sData.location);
+          return sData.location;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[VoiceEngine] SoundOfText resolution notice:', err.message);
+  }
+  return null;
+}
+
+/**
+ * Pre-warm audio for upcoming scene narrations or articles
+ * Resolves cloud audio in advance so playback starts with zero latency
+ */
+export function prewarmAudio(text = '', lang = 'hi') {
+  if (!text) return;
+  const chunks = chunkTextIntoPhrases(text, 175);
+  chunks.forEach((chunk) => {
+    // 1. Resolve SoundOfText in background
+    resolveSoundOfTextUrl(chunk, lang).catch(() => {});
+
+    // 2. Pre-instantiate audio element with no-referrer
+    const apiPrefix = API_BASE || '';
+    const audioUrl = `${apiPrefix}/api/tts?lang=${lang}&text=${encodeURIComponent(chunk.trim().slice(0, 180))}`;
+    try {
+      const a = new Audio();
+      a.referrerPolicy = 'no-referrer';
+      a.preload = 'auto';
+      a.src = audioUrl;
+    } catch {}
+  });
+}
+
+/**
+ * Direct Google Indian Female Voice URL with custom client
+ */
+export function getGoogleTtsUrl(text, lang = 'hi', client = 'dict-chrome-ex') {
   const codeMap = {
     hi: 'hi',
     en: 'en-IN',
@@ -185,24 +259,40 @@ export function getGoogleTtsUrl(text, lang = 'hi') {
   };
   const tl = codeMap[lang] || 'hi';
   const clean = text.trim().slice(0, 180);
-  return `https://translate.google.com/translate_tts?ie=UTF-8&tl=${tl}&client=tw-ob&q=${encodeURIComponent(clean)}`;
+  return `https://translate.google.com/translate_tts?ie=UTF-8&tl=${tl}&client=${client}&q=${encodeURIComponent(clean)}`;
 }
 
 /**
  * Get Audio Stream URLs for a chunk with fallback cascade:
- * 1. Backend Proxy (/api/tts) if available
- * 2. Direct Google Translate TTS with cross-origin audio streaming
+ * 1. Backend Proxy (/api/tts) - works on Localhost AND Vercel Serverless Function
+ * 2. Pre-cached SoundOfText Cloud MP3
+ * 3. Direct Google Translate TTS with Chrome Extension client (dict-chrome-ex)
+ * 4. Direct Google Translate TTS with Google Translate client (gtx)
+ * 5. Direct Google Translate TTS with Open Broadcast client (tw-ob)
  */
 function getAudioCandidates(chunkText, lang) {
   const candidates = [];
+  const clean = chunkText.trim().slice(0, 180);
+  const encoded = encodeURIComponent(clean);
+  const apiPrefix = API_BASE || '';
 
-  // If in localhost or backend configured, add backend proxy as candidate 1
-  if (API_BASE || (typeof window !== 'undefined' && window.location.hostname === 'localhost')) {
-    candidates.push(`${API_BASE}/api/tts?lang=${lang}&text=${encodeURIComponent(chunkText)}`);
+  // 1. Unified /api/tts endpoint (Localhost Express & Vercel api/tts.js)
+  candidates.push(`${apiPrefix}/api/tts?lang=${lang}&text=${encoded}`);
+
+  // 2. Pre-cached SoundOfText MP3 URL if already resolved
+  const sotKey = `${lang}:${clean.slice(0, 150)}`;
+  if (soundOfTextCache.has(sotKey)) {
+    candidates.push(soundOfTextCache.get(sotKey));
   }
 
-  // Direct Google TTS URL (Works universally in all browsers on GitHub Pages and localhost)
-  candidates.push(getGoogleTtsUrl(chunkText, lang));
+  // 3. Direct Google Translate with dict-chrome-ex client
+  candidates.push(getGoogleTtsUrl(chunkText, lang, 'dict-chrome-ex'));
+
+  // 4. Direct Google Translate with gtx client
+  candidates.push(getGoogleTtsUrl(chunkText, lang, 'gtx'));
+
+  // 5. Direct Google Translate with tw-ob client
+  candidates.push(getGoogleTtsUrl(chunkText, lang, 'tw-ob'));
 
   return candidates;
 }
@@ -244,11 +334,18 @@ export async function speakFemaleVoice({
 
   function preloadNextChunk(idx) {
     if (idx < totalChunks && !preloadedAudios.has(idx)) {
-      const nextCandidates = getAudioCandidates(chunks[idx], lang);
-      const audio = new Audio();
-      audio.preload = 'auto';
-      audio.src = nextCandidates[0];
-      preloadedAudios.set(idx, { audio, candidates: nextCandidates, candidateIdx: 0 });
+      const chunk = chunks[idx];
+      // Also pre-resolve SoundOfText in background
+      resolveSoundOfTextUrl(chunk, lang).catch(() => {});
+
+      const nextCandidates = getAudioCandidates(chunk, lang);
+      try {
+        const audio = new Audio();
+        audio.referrerPolicy = 'no-referrer';
+        audio.preload = 'auto';
+        audio.src = nextCandidates[0];
+        preloadedAudios.set(idx, { audio, candidates: nextCandidates, candidateIdx: 0 });
+      } catch {}
     }
   }
 
@@ -275,23 +372,41 @@ export async function speakFemaleVoice({
     const candidates = getAudioCandidates(chunkText, lang);
     let candidateIndex = 0;
 
-    function attemptPlayCandidate() {
+    async function attemptPlayCandidate() {
       if (!isPlaybackActive) return;
 
       if (candidateIndex >= candidates.length) {
+        // Before giving up to WebSpeech, try on-demand SoundOfText resolution
+        const sotUrl = await resolveSoundOfTextUrl(chunkText, lang);
+        if (sotUrl && isPlaybackActive) {
+          tryPlayUrl(sotUrl);
+          return;
+        }
+
         console.warn('[VoiceEngine] All network TTS candidates exhausted, falling back to WebSpeech...');
-        fallbackToWebSpeech(chunkText, lang, rate, onProgress, () => {
-          chunkIndex++;
-          playNextChunk();
-        }, onError);
+        fallbackToWebSpeech(
+          chunkText,
+          lang,
+          rate,
+          onProgress,
+          () => {
+            chunkIndex++;
+            playNextChunk();
+          },
+          onError
+        );
         return;
       }
 
       const audioUrl = candidates[candidateIndex];
+      tryPlayUrl(audioUrl);
+    }
 
+    function tryPlayUrl(url) {
       try {
         const audio = new Audio();
-        audio.src = audioUrl;
+        audio.referrerPolicy = 'no-referrer';
+        audio.src = url;
         audio.playbackRate = Math.max(0.85, Math.min(1.15, rate));
 
         currentAudio = audio;
@@ -302,7 +417,7 @@ export async function speakFemaleVoice({
           if (!isPlaybackActive || !audio || audio !== currentAudio) return;
           if (audio.duration && !isNaN(audio.duration) && audio.duration > 0) {
             const currentChunkFraction = Math.min(audio.currentTime / audio.duration, 0.99);
-            const overall = (wordsBefore + (currentChunkFraction * currentChunkWords)) / totalWords;
+            const overall = (wordsBefore + currentChunkFraction * currentChunkWords) / totalWords;
             onProgress(Math.min(overall, 0.99), audio.currentTime, audio.duration);
           }
           if (!audio.paused && !audio.ended) {
@@ -319,7 +434,7 @@ export async function speakFemaleVoice({
           if (!isPlaybackActive) return;
           if (audio.duration && !isNaN(audio.duration) && audio.duration > 0) {
             const currentChunkFraction = Math.min(audio.currentTime / audio.duration, 0.99);
-            const overall = (wordsBefore + (currentChunkFraction * currentChunkWords)) / totalWords;
+            const overall = (wordsBefore + currentChunkFraction * currentChunkWords) / totalWords;
             onProgress(Math.min(overall, 0.99), audio.currentTime, audio.duration);
           }
         };
@@ -402,6 +517,21 @@ function fallbackToWebSpeech(text, lang, rate, onProgress, onEnd, onError) {
     const femaleVoice = getBestFemaleVoice(voices, lang);
     if (femaleVoice) {
       utterance.voice = femaleVoice;
+    } else {
+      // Guard against Chrome desktop throwing 'language-unavailable' when Hindi offline voice pack is missing
+      const hasLangVoice = voices.some((v) => (v.lang || '').toLowerCase().startsWith(lang));
+      if (!hasLangVoice) {
+        const indianFallback = voices.find((v) => {
+          const vLang = (v.lang || '').toLowerCase().replace('_', '-');
+          const vName = (v.name || '').toLowerCase();
+          return vLang.startsWith('en-in') || vName.includes('india');
+        }) || voices.find((v) => (v.name || '').toLowerCase().includes('female')) || voices[0];
+
+        if (indianFallback) {
+          utterance.voice = indianFallback;
+          utterance.lang = indianFallback.lang || 'en-IN';
+        }
+      }
     }
 
     // Natural 1.0 pitch (prevents squeaky chipmunk distortion)
