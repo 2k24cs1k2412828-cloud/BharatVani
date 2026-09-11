@@ -26,7 +26,7 @@ import VideoPlayerModal from './components/VideoPlayerModal';
 import FactSheetModal from './components/FactSheetModal';
 import AudioPlayerBar from './components/AudioPlayerBar';
 import Footer from './components/Footer';
-import SplashScreen from './components/SplashScreen';
+import LandingPage from './components/LandingPage';
 import LanguageSelectionModal from './components/LanguageSelectionModal';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
@@ -39,8 +39,8 @@ import { getFallbackNews } from './data/fallbackNews';
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export default function App() {
-  // Onboarding & Splash States
-  const [showSplash, setShowSplash] = useState(() => !localStorage.getItem('bharatvani_splash_seen'));
+  // Landing Page & Gateway State (First visit or toggled from Nav)
+  const [showLanding, setShowLanding] = useState(() => !localStorage.getItem('bharatvani_landing_seen'));
   const [showLanguageOnboarding, setShowLanguageOnboarding] = useState(false);
   const [showLanguageModal, setShowLanguageModal] = useState(false);
 
@@ -215,10 +215,10 @@ export default function App() {
     };
   }, [lang]);
 
-  // Official Landing Gateway Complete -> Enter Main Portal
-  const handleSplashComplete = () => {
-    localStorage.setItem('bharatvani_splash_seen', 'true');
-    setShowSplash(false);
+  // Landing Page -> Enter Main Live News View
+  const handleExploreNews = () => {
+    localStorage.setItem('bharatvani_landing_seen', 'true');
+    setShowLanding(false);
   };
 
   // Bookmarking Toggle
@@ -361,21 +361,6 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* 1. Official Government Landing Gateway (First Open & Overview Tour) */}
-      {showSplash && (
-        <SplashScreen
-          currentLang={lang}
-          onSelectLanguage={(l) => setLang(l)}
-          onComplete={handleSplashComplete}
-          onOpenAuth={() => {
-            setShowSplash(false);
-            localStorage.setItem('bharatvani_splash_seen', 'true');
-            setShowAuthModal(true);
-          }}
-          onClose={() => setShowSplash(false)}
-        />
-      )}
-
       {/* 2. Onboarding Language Selection Gateway */}
       {showLanguageOnboarding && (
         <LanguageSelectionModal
@@ -415,11 +400,28 @@ export default function App() {
         onOpenAuth={() => setShowAuthModal(true)}
         onOpenProfile={() => setShowProfileModal(true)}
         onOpenLanguageModal={() => setShowLanguageModal(true)}
-        onOpenLanding={() => setShowSplash(true)}
+        onOpenLanding={() => setShowLanding(true)}
       />
 
-      {/* Real-time Live PIB Press Release Toast Banner */}
-      {realtimeNotification && (
+      {/* Main View: Either Official Landing Gateway OR Live News Feed */}
+      {showLanding ? (
+        <LandingPage
+          lang={lang}
+          setLang={setLang}
+          articles={articles}
+          onExploreNews={handleExploreNews}
+          onOpenAuth={() => setShowAuthModal(true)}
+          onOpenArticle={(art) => setSelectedArticle(art)}
+          onPlayAudio={(art) => playAudio(art)}
+          onWatchVideo={(art) => openVideoPlayer(art)}
+          onOpenFactSheet={(art) => setFactArticle(art)}
+          currentUser={currentUser}
+          onAuthSuccess={(u) => setCurrentUser(u)}
+        />
+      ) : (
+        <>
+          {/* Real-time Live PIB Press Release Toast Banner */}
+          {realtimeNotification && (
         <div style={{
           background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
           color: '#ffffff',
@@ -607,6 +609,8 @@ export default function App() {
           </div>
         )}
       </main>
+    </>
+  )}
 
       {/* Article Detail Reading Modal */}
       {selectedArticle && (
@@ -678,7 +682,7 @@ export default function App() {
       />
 
       {/* Footer */}
-      <Footer lang={lang} mode={mode} onOpenLanding={() => setShowSplash(true)} />
+      <Footer lang={lang} mode={mode} onOpenLanding={() => setShowLanding(true)} />
     </div>
   );
 }
