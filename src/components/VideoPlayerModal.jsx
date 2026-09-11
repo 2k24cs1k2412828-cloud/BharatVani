@@ -133,17 +133,27 @@ export default function VideoPlayerModal({
 
   const progressIntervalRef = useRef(null);
 
-  // Fetch or generate AI storyboard
+  // Fetch or generate AI storyboard instantly
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
 
+    if (!API_BASE) {
+      // Zero-latency client generation for static hosting
+      const fb = generateFallbackStoryboard(article, lang);
+      setStoryboard(fb);
+      setCurrentSceneIndex(0);
+      setIsPlaying(true);
+      setLoading(false);
+      return;
+    }
+
     axios.post(`${API_BASE}/api/ai/storyboard`, {
       article,
       lang: lang === 'en' ? 'en' : 'hi',
-    }, { timeout: 5000 })
+    }, { timeout: 2500 })
       .then((res) => {
-        if (isMounted && res.data.success && res.data.data) {
+        if (isMounted && res.data?.success && res.data?.data) {
           setStoryboard(res.data.data);
           setCurrentSceneIndex(0);
           setIsPlaying(true);
@@ -155,7 +165,7 @@ export default function VideoPlayerModal({
         }
       })
       .catch((err) => {
-        console.warn('Backend AI storyboard unavailable, using client storyboard generator:', err.message);
+        console.warn('Backend AI storyboard unavailable, using client generator:', err.message);
         if (isMounted) {
           const fb = generateFallbackStoryboard(article, lang);
           setStoryboard(fb);
