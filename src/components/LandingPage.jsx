@@ -32,6 +32,7 @@ import { translations } from '../translations';
 import { speakFemaleVoice, stopAllSpeech } from '../utils/voiceEngine';
 import { supabase, isSupabaseClientConfigured } from '../utils/supabaseClient';
 import { INDIAN_STATES } from '../data/indianLocations';
+import NewsCard from './NewsCard';
 
 const CITIZEN_ROLES = [
   { id: 'citizen', label: 'नागरिक / Citizen', icon: Users },
@@ -935,6 +936,72 @@ export default function LandingPage({
 
         </div>
       </section>
+
+      {/* 3. Real-Time News Bulletin Grid */}
+      {articles && articles.length > 0 && (
+        <section style={{
+          background: 'var(--bg-secondary)',
+          borderTop: '1px solid var(--border-color)',
+          padding: '3rem 1.25rem',
+        }}>
+          <div className="container">
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '1.75rem',
+              flexWrap: 'wrap',
+              gap: '1rem',
+            }}>
+              <div>
+                <span className="badge" style={{ marginBottom: '0.4rem', display: 'inline-block' }}>
+                  {lang === 'hi' ? 'ताज़ा समाचार बुलेटिन' : 'Latest News Releases'}
+                </span>
+                <h2 style={{ fontSize: '1.6rem', fontWeight: '800', color: 'var(--text-primary)', margin: 0 }}>
+                  {lang === 'hi' ? 'प्रेस सूचना ब्यूरो की प्रमुख आधिकारिक विज्ञप्तियां' : 'Official Press Information Bureau Releases'}
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={onExploreNews}
+                className="btn btn-primary"
+                style={{ padding: '0.6rem 1.25rem', fontSize: '0.88rem', fontWeight: '700', gap: '0.4rem' }}
+              >
+                <span>{lang === 'hi' ? 'सभी विज्ञप्तियां एवं फ़िल्टर देखें' : 'View Full Interactive Newsroom'}</span>
+                <ArrowRight size={15} />
+              </button>
+            </div>
+
+            <div className="news-grid">
+              {articles.slice(0, 6).map((art) => (
+                <NewsCard
+                  key={art.id || art.prid}
+                  article={art}
+                  lang={lang}
+                  mode="kisan"
+                  onOpenArticle={onOpenArticle}
+                  onPlayAudio={onPlayAudio}
+                  onWatchVideo={onWatchVideo}
+                  onOpenFactSheet={onOpenFactSheet}
+                />
+              ))}
+            </div>
+
+            <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
+              <button
+                type="button"
+                onClick={onExploreNews}
+                className="btn btn-primary"
+                style={{ padding: '0.75rem 2rem', fontSize: '1rem', fontWeight: '800', gap: '0.5rem' }}
+              >
+                <span>{lang === 'hi' ? 'संपूर्ण समाचार कक्ष में प्रवेश करें' : 'Explore All News in Newsroom'}</span>
+                <ArrowRight size={18} />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
     </div>
   );

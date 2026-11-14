@@ -6,3 +6,6 @@ dist/
 server/node_modules/
 __pycache__/
 *.pyc
+media/
+text2video_demo/
+*.mp4
