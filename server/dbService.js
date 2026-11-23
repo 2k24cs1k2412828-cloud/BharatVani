@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient.js';
+export { isSupabaseConfigured };
 
 /**
  * Batch upsert scraped PIB articles into Supabase with full text support

@@ -1,6 +1,7 @@
 import { fetchArticleDetail } from '../../server/scraper.js';
 import { getFallbackNews } from '../../src/data/fallbackNews.js';
-import { getArticleById, isSupabaseConfigured, saveArticleDetail } from '../../server/dbService.js';
+import { getArticleById, saveArticleDetail } from '../../server/dbService.js';
+import { isSupabaseConfigured } from '../../server/supabaseClient.js';
 
 export default async function handler(req, res) {
   // Universal CORS

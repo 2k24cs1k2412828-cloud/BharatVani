@@ -1,6 +1,7 @@
 import { fetchPibFeed } from '../server/scraper.js';
 import { getFallbackNews } from '../src/data/fallbackNews.js';
-import { getArticles as getDbArticles, isSupabaseConfigured, upsertArticles } from '../server/dbService.js';
+import { getArticles as getDbArticles, upsertArticles } from '../server/dbService.js';
+import { isSupabaseConfigured } from '../server/supabaseClient.js';
 
 export default async function handler(req, res) {
   // Universal CORS
