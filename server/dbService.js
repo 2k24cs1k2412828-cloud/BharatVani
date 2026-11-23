@@ -1,29 +1,39 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient.js';
 
 /**
- * Batch upsert scraped PIB articles into Supabase
+ * Batch upsert scraped PIB articles into Supabase with full text support
  */
 export async function upsertArticles(articles = []) {
   if (!isSupabaseConfigured() || !articles.length) return false;
 
   try {
-    const rows = articles.map((a) => ({
-      id: a.id || a.prid,
-      prid: a.prid || a.id,
-      title: a.title,
-      description: a.description || '',
-      category: a.category || 'governance',
-      ministry: a.ministry || '',
-      lang: a.lang || 'hi',
-      link: a.link || '',
-      iframe_link: a.iframeLink || '',
-      pub_date: a.pubDate ? new Date(a.pubDate).toISOString() : new Date().toISOString(),
-      paragraphs: a.paragraphs || [],
-      key_takeaways: a.keyTakeaways || [],
-      images: a.images || [],
-      source: a.source || 'Press Information Bureau (PIB), GoI',
-      updated_at: new Date().toISOString(),
-    }));
+    const rows = articles.map((a) => {
+      const safeLang = a.lang || 'hi';
+      const safePrid = String(a.prid || a.id || '');
+      // Composite ID ensures that Hindi, English, Tamil, Telugu, and Gujarati versions
+      // of the same release never overwrite each other in the database
+      const rowId = a.id?.includes('_') ? a.id : `${safePrid}_${safeLang}`;
+      const cleanFullText = a.fullText || (Array.isArray(a.paragraphs) && a.paragraphs.length > 0 ? a.paragraphs.join('\n\n') : '') || a.description || '';
+
+      return {
+        id: rowId,
+        prid: safePrid,
+        title: a.title,
+        description: a.description || '',
+        full_text: cleanFullText,
+        category: a.category || 'governance',
+        ministry: a.ministry || '',
+        lang: safeLang,
+        link: a.link || '',
+        iframe_link: a.iframeLink || '',
+        pub_date: a.pubDate ? new Date(a.pubDate).toISOString() : new Date().toISOString(),
+        paragraphs: a.paragraphs || [],
+        key_takeaways: a.keyTakeaways || [],
+        images: a.images || [],
+        source: a.source || 'Press Information Bureau (PIB), GoI',
+        updated_at: new Date().toISOString(),
+      };
+    });
 
     const { data, error } = await supabase
       .from('articles')
@@ -67,8 +77,8 @@ export async function getArticles({
     }
 
     if (search) {
-      // Search in title, description, or ministry
-      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%,ministry.ilike.%${search}%`);
+      // Search in title, description, ministry, or full_text
+      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%,ministry.ilike.%${search}%,full_text.ilike.%${search}%`);
     }
 
     if (dateFrom) {
@@ -96,15 +106,16 @@ export async function getArticles({
       prid: row.prid,
       title: row.title,
       description: row.description,
+      fullText: row.full_text || (Array.isArray(row.paragraphs) ? row.paragraphs.join('\n\n') : '') || row.description || '',
       category: row.category,
       ministry: row.ministry,
       lang: row.lang,
       link: row.link,
       iframeLink: row.iframe_link,
       pubDate: row.pub_date,
-      paragraphs: row.paragraphs,
-      keyTakeaways: row.key_takeaways,
-      images: row.images,
+      paragraphs: row.paragraphs || [],
+      keyTakeaways: row.key_takeaways || [],
+      images: row.images || [],
       source: row.source,
       createdAt: row.created_at,
     }));
@@ -120,23 +131,93 @@ export async function getArticles({
 }
 
 /**
- * Save full scraped detail (paragraphs, takeaways, images) for an article
+ * Fetch a single past or current article by PRID & Language from Supabase
+ * Ensures full text and paragraphs are available for AI video, audio, and fact check generation
+ */
+export async function getArticleById(prid, lang = 'hi') {
+  if (!isSupabaseConfigured() || !prid) return null;
+
+  try {
+    const safeLang = lang || 'hi';
+    const rowId = `${prid}_${safeLang}`;
+
+    let { data, error } = await supabase
+      .from('articles')
+      .select('*')
+      .eq('id', rowId)
+      .maybeSingle();
+
+    if (!data) {
+      // Fallback search by prid & lang
+      const res = await supabase
+        .from('articles')
+        .select('*')
+        .eq('prid', String(prid))
+        .eq('lang', safeLang)
+        .limit(1);
+      data = res.data?.[0];
+    }
+
+    if (data) {
+      return {
+        id: data.id,
+        prid: data.prid,
+        title: data.title,
+        description: data.description,
+        fullText: data.full_text || (Array.isArray(data.paragraphs) ? data.paragraphs.join('\n\n') : '') || data.description || '',
+        category: data.category,
+        ministry: data.ministry,
+        lang: data.lang,
+        link: data.link,
+        iframeLink: data.iframe_link,
+        pubDate: data.pub_date,
+        paragraphs: data.paragraphs || [],
+        keyTakeaways: data.key_takeaways || [],
+        images: data.images || [],
+        source: data.source,
+        createdAt: data.created_at,
+      };
+    }
+    return null;
+  } catch (err) {
+    console.error('Error fetching article by id from Supabase:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Save full scraped detail (paragraphs, takeaways, images, full text) for an article
  */
 export async function saveArticleDetail(prid, lang, detail) {
   if (!isSupabaseConfigured() || !prid || !detail) return false;
 
   try {
+    const safeLang = lang || 'hi';
+    const rowId = `${prid}_${safeLang}`;
+    const cleanFullText = detail.fullText || (Array.isArray(detail.paragraphs) && detail.paragraphs.length > 0 ? detail.paragraphs.join('\n\n') : '') || '';
+
     const { error } = await supabase
       .from('articles')
-      .update({
-        ministry: detail.ministry,
-        paragraphs: detail.paragraphs || [],
-        key_takeaways: detail.keyTakeaways || [],
-        images: detail.images || [],
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', prid)
-      .eq('lang', lang);
+      .upsert(
+        {
+          id: rowId,
+          prid: String(prid),
+          title: detail.title,
+          description: detail.paragraphs?.[0] || detail.title,
+          full_text: cleanFullText,
+          category: detail.category || 'governance',
+          ministry: detail.ministry || '',
+          lang: safeLang,
+          link: detail.originalUrl || `https://pib.gov.in/PressReleasePage.aspx?PRID=${prid}`,
+          iframe_link: `https://pib.gov.in/PressReleaseIframePage.aspx?PRID=${prid}`,
+          paragraphs: detail.paragraphs || [],
+          key_takeaways: detail.keyTakeaways || [],
+          images: detail.images || [],
+          source: 'Press Information Bureau (PIB), GoI',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
 
     if (error) {
       console.warn('⚠️ Supabase saveArticleDetail error:', error.message);

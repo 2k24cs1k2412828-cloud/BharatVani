@@ -1,5 +1,6 @@
 import { fetchPibFeed } from '../server/scraper.js';
 import { getFallbackNews } from '../src/data/fallbackNews.js';
+import { getArticles as getDbArticles, isSupabaseConfigured, upsertArticles } from '../server/dbService.js';
 
 export default async function handler(req, res) {
   // Universal CORS
@@ -21,15 +22,52 @@ export default async function handler(req, res) {
     const category = req.query.category || 'all';
     const search = (req.query.search || '').trim().toLowerCase();
     const force = req.query.force === 'true';
+    const useArchive = req.query.archive === 'true';
+
+    // 1. If requesting historical archive and database is configured
+    if (useArchive && isSupabaseConfigured()) {
+      try {
+        const dbResult = await getDbArticles({ lang, category, search, limit: 30 });
+        if (dbResult && dbResult.articles && dbResult.articles.length > 0) {
+          return res.status(200).json({
+            success: true,
+            count: dbResult.articles.length,
+            total: dbResult.total,
+            lang: lang,
+            category: category,
+            source: 'supabase_archive',
+            data: dbResult.articles,
+          });
+        }
+      } catch (dbErr) {
+        console.warn('Archive query error:', dbErr.message);
+      }
+    }
 
     let articles = [];
 
+    // 2. Fetch live PIB news feed
     try {
       articles = await fetchPibFeed(lang, force);
+      // Background sync to database if configured
+      if (isSupabaseConfigured() && articles.length > 0) {
+        upsertArticles(articles).catch(() => {});
+      }
     } catch (scrapeErr) {
       console.warn('Scraper error in Vercel serverless function:', scrapeErr.message);
     }
 
+    // 3. Fallback to Supabase historical archive if scraper failed
+    if ((!Array.isArray(articles) || articles.length === 0) && isSupabaseConfigured()) {
+      try {
+        const dbResult = await getDbArticles({ lang, category, search, limit: 25 });
+        if (dbResult?.articles?.length > 0) {
+          articles = dbResult.articles;
+        }
+      } catch {}
+    }
+
+    // 4. Fallback to bundled dataset
     if (!Array.isArray(articles) || articles.length === 0) {
       articles = getFallbackNews(lang);
     }

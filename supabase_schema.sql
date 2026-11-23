@@ -1,20 +1,22 @@
 -- ============================================================================
 -- 🇮🇳 BharatVani (भारतवाणी) — Supabase PostgreSQL Schema
 -- Real-Time News Archive, AI Storyboard Cache, Fact Reports & User Profiles
+-- Stores full-text releases for generating video, audio & facts for past news
 -- ============================================================================
 
--- 1. Create Articles Table (Historical PIB News Archive)
+-- 1. Create Articles Table (Historical PIB News Archive with Full Text)
 CREATE TABLE IF NOT EXISTS public.articles (
-    id TEXT PRIMARY KEY,                       -- PRID or unique slug (e.g., '2301420' or '2301420-hi')
-    prid TEXT,                                 -- Official PIB Release ID
+    id TEXT PRIMARY KEY,                       -- Unique release slug: `${prid}_${lang}` (e.g. '2301058_hi')
+    prid TEXT NOT NULL,                        -- Official PIB Release ID (e.g. '2301058')
     title TEXT NOT NULL,                       -- Headline / Release Title
     description TEXT,                          -- Snippet / Lead summary
+    full_text TEXT,                            -- Complete text body of the press release for AI generation
     category TEXT DEFAULT 'governance',        -- 'agriculture', 'technology', 'economy', 'health', 'environment', 'governance'
     ministry TEXT,                             -- Issuing Ministry / Department
     lang TEXT NOT NULL DEFAULT 'hi',           -- 'hi', 'en', 'ta', 'te', 'gu'
     link TEXT,                                 -- Official PIB URL
     iframe_link TEXT,                          -- Official PIB Iframe URL
-    pub_date TIMESTAMPTZ,                      -- Original publication timestamp
+    pub_date TIMESTAMPTZ DEFAULT now(),        -- Original publication timestamp
     paragraphs JSONB DEFAULT '[]'::jsonb,      -- Full press release paragraphs array
     key_takeaways JSONB DEFAULT '[]'::jsonb,   -- Kisan Mode simplified takeaway points
     images JSONB DEFAULT '[]'::jsonb,          -- Extracted images from PIB release
@@ -23,13 +25,16 @@ CREATE TABLE IF NOT EXISTS public.articles (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Indexes for fast queries
+-- Ensure full_text exists if migrating an existing database
+ALTER TABLE public.articles ADD COLUMN IF NOT EXISTS full_text TEXT;
+
+-- Indexes for lightning-fast queries across historical news
 CREATE INDEX IF NOT EXISTS idx_articles_lang ON public.articles(lang);
 CREATE INDEX IF NOT EXISTS idx_articles_category ON public.articles(category);
 CREATE INDEX IF NOT EXISTS idx_articles_pub_date ON public.articles(pub_date DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_created_at ON public.articles(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_prid ON public.articles(prid);
-CREATE INDEX IF NOT EXISTS idx_articles_search ON public.articles USING gin(to_tsvector('simple', title || ' ' || coalesce(description, '')));
+CREATE INDEX IF NOT EXISTS idx_articles_search ON public.articles USING gin(to_tsvector('simple', title || ' ' || coalesce(description, '') || ' ' || coalesce(full_text, '')));
 
 
 -- 2. Create Fact Reports Table (Zero-Hallucination Verified Claims Cache)
@@ -81,7 +86,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 CREATE INDEX IF NOT EXISTS idx_profiles_state ON public.profiles(state);
 
 
--- 5. Enable Row Level Security (RLS)
+-- 5. Enable Row Level Security (RLS) with Permissive Policies
 ALTER TABLE public.articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fact_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.storyboards ENABLE ROW LEVEL SECURITY;
@@ -89,40 +94,36 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
-    -- Articles policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'articles' AND policyname = 'Public Read Articles') THEN
-        CREATE POLICY "Public Read Articles" ON public.articles FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'articles' AND policyname = 'Service Insert/Update Articles') THEN
-        CREATE POLICY "Service Insert/Update Articles" ON public.articles FOR ALL USING (true) WITH CHECK (true);
-    END IF;
+    -- Articles policies: Public read + open upsert for sync scripts / service role
+    DROP POLICY IF EXISTS "Public Read Articles" ON public.articles;
+    CREATE POLICY "Public Read Articles" ON public.articles FOR SELECT USING (true);
 
-    -- Fact Reports policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'fact_reports' AND policyname = 'Public Read Fact Reports') THEN
-        CREATE POLICY "Public Read Fact Reports" ON public.fact_reports FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'fact_reports' AND policyname = 'Service All Fact Reports') THEN
-        CREATE POLICY "Service All Fact Reports" ON public.fact_reports FOR ALL USING (true) WITH CHECK (true);
-    END IF;
+    DROP POLICY IF EXISTS "Service Insert/Update Articles" ON public.articles;
+    CREATE POLICY "Service Insert/Update Articles" ON public.articles FOR ALL USING (true) WITH CHECK (true);
 
-    -- Storyboards policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'storyboards' AND policyname = 'Public Read Storyboards') THEN
-        CREATE POLICY "Public Read Storyboards" ON public.storyboards FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'storyboards' AND policyname = 'Service All Storyboards') THEN
-        CREATE POLICY "Service All Storyboards" ON public.storyboards FOR ALL USING (true) WITH CHECK (true);
-    END IF;
+    -- Fact Reports policies: Public read + open cache
+    DROP POLICY IF EXISTS "Public Read Fact Reports" ON public.fact_reports;
+    CREATE POLICY "Public Read Fact Reports" ON public.fact_reports FOR SELECT USING (true);
+
+    DROP POLICY IF EXISTS "Service All Fact Reports" ON public.fact_reports;
+    CREATE POLICY "Service All Fact Reports" ON public.fact_reports FOR ALL USING (true) WITH CHECK (true);
+
+    -- Storyboards policies: Public read + open cache
+    DROP POLICY IF EXISTS "Public Read Storyboards" ON public.storyboards;
+    CREATE POLICY "Public Read Storyboards" ON public.storyboards FOR SELECT USING (true);
+
+    DROP POLICY IF EXISTS "Service All Storyboards" ON public.storyboards;
+    CREATE POLICY "Service All Storyboards" ON public.storyboards FOR ALL USING (true) WITH CHECK (true);
 
     -- Profiles policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'profiles' AND policyname = 'Profiles viewable by owner or service') THEN
-        CREATE POLICY "Profiles viewable by owner or service" ON public.profiles FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'profiles' AND policyname = 'Users can insert their own profile') THEN
-        CREATE POLICY "Users can insert their own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'profiles' AND policyname = 'Users can update their own profile') THEN
-        CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
-    END IF;
+    DROP POLICY IF EXISTS "Profiles viewable by owner or service" ON public.profiles;
+    CREATE POLICY "Profiles viewable by owner or service" ON public.profiles FOR SELECT USING (true);
+
+    DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
+    CREATE POLICY "Users can insert their own profile" ON public.profiles FOR INSERT WITH CHECK (true);
+
+    DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
+    CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
 END $$;
 
 
@@ -143,7 +144,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Drop trigger if exists to allow clean re-runs
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users

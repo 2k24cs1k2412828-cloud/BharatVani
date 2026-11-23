@@ -581,6 +581,7 @@ export async function generateGeminiStoryboard(article, apiKey, lang = 'hi') {
   };
 
   const targetLangStr = languagePromptMap[safeLang] || 'HINDI (Devanagari script)';
+  const fullArticleContent = article.fullText || (Array.isArray(article.paragraphs) && article.paragraphs.length > 0 ? article.paragraphs.join('\n\n') : '') || article.description || '';
 
   const prompt = `
 You are an expert news producer crafting a viral, highly engaging, 3-scene Instagram Reel / YouTube Shorts style visual news bulletin for Indian citizens.
@@ -588,9 +589,10 @@ It should be easily understood by BOTH rural citizens/farmers and urban professi
 
 Article Details:
 Title: "${article.title}"
-Description: "${article.description || ''}"
 Category: "${cat}"
 Ministry: "${article.ministry || 'Government of India'}"
+Full Release Text & Context:
+"${fullArticleContent.slice(0, 3000)}"
 
 Create a structured 3-scene video storyboard strictly in ${targetLangStr}.
 Return ONLY a valid JSON array of 3 scene objects (no markdown, no backticks, just raw JSON array).

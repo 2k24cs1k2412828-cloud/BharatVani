@@ -10,6 +10,7 @@ import { isSupabaseConfigured } from './supabaseClient.js';
 import {
   upsertArticles,
   getArticles as getDbArticles,
+  getArticleById,
   saveArticleDetail,
   getFactReport,
   saveFactReport,
@@ -180,7 +181,7 @@ app.get('/api/news/archive', async (req, res) => {
   }
 });
 
-// API: Get Full Article Detail
+// API: Get Full Article Detail (Checks Supabase Full-Text Archive First)
 app.get('/api/news/detail', async (req, res) => {
   try {
     const prid = req.query.prid || req.query.id;
@@ -193,6 +194,19 @@ app.get('/api/news/detail', async (req, res) => {
       });
     }
 
+    // 1. If stored in Supabase with full paragraphs/text, serve immediately from archive
+    if (isSupabaseConfigured()) {
+      const dbArticle = await getArticleById(prid, lang);
+      if (dbArticle && dbArticle.paragraphs && dbArticle.paragraphs.length > 0) {
+        return res.json({
+          success: true,
+          source: 'supabase_archive',
+          data: dbArticle,
+        });
+      }
+    }
+
+    // 2. Otherwise scrape from live PIB
     const detail = await fetchArticleDetail(prid, lang);
 
     // Save detailed paragraphs & takeaways to Supabase if configured
@@ -216,7 +230,7 @@ app.get('/api/news/detail', async (req, res) => {
   }
 });
 
-// API: Generate AI Visual Video Storyboard (with DB Cache)
+// API: Generate AI Visual Video Storyboard (with DB Cache & Full-Text support)
 app.post('/api/ai/storyboard', async (req, res) => {
   try {
     const { article, apiKey, lang } = req.body;
@@ -243,8 +257,17 @@ app.post('/api/ai/storyboard', async (req, res) => {
       }
     }
 
+    // Ensure full text from Supabase archive is available for past news
+    let targetArticle = article;
+    if (isSupabaseConfigured() && (!targetArticle.paragraphs || targetArticle.paragraphs.length === 0)) {
+      const dbArticle = await getArticleById(articleId, language);
+      if (dbArticle) {
+        targetArticle = { ...article, ...dbArticle };
+      }
+    }
+
     const keyToUse = process.env.GEMINI_API_KEY || apiKey;
-    const storyboard = await generateGeminiStoryboard(article, keyToUse, language);
+    const storyboard = await generateGeminiStoryboard(targetArticle, keyToUse, language);
 
     // Persist to Supabase in background
     if (isSupabaseConfigured() && articleId && storyboard) {

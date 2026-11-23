@@ -8,7 +8,8 @@ export const isSupabaseConfigured = () => {
     supabaseUrl &&
     supabaseKey &&
     supabaseUrl.startsWith('http') &&
-    !supabaseUrl.includes('your-project-ref')
+    !supabaseUrl.includes('your-project-ref') &&
+    !supabaseUrl.includes('rpalsmczwimzvwyqqtcc')
   );
 };
 

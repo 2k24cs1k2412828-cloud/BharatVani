@@ -1,5 +1,6 @@
 import { fetchArticleDetail } from '../../server/scraper.js';
 import { getFallbackNews } from '../../src/data/fallbackNews.js';
+import { getArticleById, isSupabaseConfigured, saveArticleDetail } from '../../server/dbService.js';
 
 export default async function handler(req, res) {
   // Universal CORS
@@ -25,14 +26,33 @@ export default async function handler(req, res) {
     }
 
     let detail = null;
-    try {
-      detail = await fetchArticleDetail(prid, lang);
-    } catch (scrapeErr) {
-      console.warn('Scraper error in detail handler:', scrapeErr.message);
+
+    // 1. Try retrieving from Supabase historical full-text archive
+    if (isSupabaseConfigured()) {
+      try {
+        const dbArticle = await getArticleById(prid, lang);
+        if (dbArticle && dbArticle.paragraphs && dbArticle.paragraphs.length > 0) {
+          detail = dbArticle;
+        }
+      } catch (dbErr) {
+        console.warn('Database lookup error in detail handler:', dbErr.message);
+      }
     }
 
+    // 2. If not archived yet, fetch from live PIB
     if (!detail) {
-      // Find from fallback news
+      try {
+        detail = await fetchArticleDetail(prid, lang);
+        if (detail && isSupabaseConfigured()) {
+          saveArticleDetail(prid, lang, detail).catch(() => {});
+        }
+      } catch (scrapeErr) {
+        console.warn('Scraper error in detail handler:', scrapeErr.message);
+      }
+    }
+
+    // 3. Fallback to bundled dataset
+    if (!detail) {
       const fallbackList = getFallbackNews(lang);
       const match = fallbackList.find((a) => a.id === prid || a.prid === prid);
       if (match) {

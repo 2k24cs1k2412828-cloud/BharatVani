@@ -1,15 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Read from env or fallback to project configuration
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://rpalsmczwimzvwyqqtcc.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_jhMRpsEBS3QOH--oFnRsRw_SNza2ED2';
+// Read from environment variables
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export const isSupabaseClientConfigured = () => {
   return Boolean(
     supabaseUrl &&
     supabaseAnonKey &&
     supabaseUrl.startsWith('http') &&
-    !supabaseUrl.includes('your-project-ref')
+    !supabaseUrl.includes('your-project-ref') &&
+    !supabaseUrl.includes('rpalsmczwimzvwyqqtcc')
   );
 };
 
@@ -47,6 +48,7 @@ export async function fetchArticlesDirectlyFromSupabase(lang = 'hi') {
         category: item.category || 'governance',
         ministry: item.ministry || 'Government of India',
         lang: item.lang || lang,
+        fullText: item.full_text || (Array.isArray(item.paragraphs) ? item.paragraphs.join('\n\n') : '') || item.description || '',
         link: item.link || '',
         iframeLink: item.iframe_link || '',
         pubDate: item.pub_date || new Date().toISOString(),
